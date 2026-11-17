@@ -1,0 +1,41 @@
+name: Deploy to GitHub Pages
+
+# 方式二：用 GitHub Actions 发布（比分支部署更稳，推荐）
+# 在仓库 Settings → Pages → Build and deployment → Source 选 GitHub Actions 后生效。
+# 本项目无构建步骤，直接上传静态文件即可。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .   # 项目根目录就是站点根目录
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

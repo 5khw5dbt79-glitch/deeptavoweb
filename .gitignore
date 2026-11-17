@@ -1,0 +1,7 @@
+# Git 要忽略的本地文件（不影响 GitHub Pages 发布）
+node_modules/
+screenshots/
+e2e-*.mjs
+*.log
+.DS_Store
+# 注意：不要把真实 API Key 写进任何被提交的文件

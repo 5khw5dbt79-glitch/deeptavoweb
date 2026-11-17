@@ -1,0 +1,19 @@
+{
+  "name": "yetan-role-chat",
+  "version": "1.0.0",
+  "description": "Tavo-inspired local role-play chat web app",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "playwright": "^1.65.1"
+  }
+}

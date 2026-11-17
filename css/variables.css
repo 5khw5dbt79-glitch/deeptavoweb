@@ -1,0 +1,52 @@
+/* variables.css — 设计 token */
+:root {
+  /* 中性 ramp（墨面） */
+  --bg: #121214;
+  --surface: #1b1b1e;
+  --surface-raised: #242428;
+  --surface-hover: #2a2a2e;
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .14);
+
+  /* 文字三角色 */
+  --text-primary: #ededf0;
+  --text-secondary: #a6a6ad;
+  --text-muted: #6e6e76;
+
+  /* 强调（暖琥珀） */
+  --accent: #e0b872;
+  --accent-text: #e9c98e;
+  --accent-soft: rgba(224, 184, 114, .12);
+
+  /* 语义 */
+  --error: #d98a7a;
+  --success: #7fb08a;
+
+  /* 字体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --fs-body: 15px;
+  --fs-title: 17px;
+  --fs-page: 22px;
+  --fs-meta: 12px;
+
+  /* 间距（4px 网格） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 圆角 */
+  --r-btn: 8px;
+  --r-input: 12px;
+  --r-card: 14px;
+  --r-modal: 18px;
+
+  /* 动效 */
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --dur-fast: 80ms;
+  --dur-mid: 150ms;
+  --dur-slow: 200ms;
+}

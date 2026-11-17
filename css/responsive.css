@@ -1,0 +1,50 @@
+/* responsive.css — 断点与安全区 */
+
+/* 手机：侧栏变抽屉，显示底部 tab */
+@media (max-width: 719px) {
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: min(82vw, 300px);
+    transform: translateX(-100%); transition: transform var(--dur-slow) var(--ease);
+    box-shadow: 8px 0 32px rgba(0,0,0,.4);
+  }
+  .sidebar.open { transform: none; }
+  .sidebar-close { display: inline-flex; }
+  .drawer-mask { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 49; opacity: 0; pointer-events: none; transition: opacity var(--dur-slow); }
+  .drawer-mask.show { opacity: 1; pointer-events: auto; }
+  .menu-btn { display: inline-flex; }
+  .tabbar { display: flex; }
+  .chat-header { height: 56px; }
+  .composer-hint { display: none; }
+  /* 手机端 tabbar 悬浮在底部，输入区需为其留出空间 */
+  .composer-wrap { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+  .scroll-bottom-btn { bottom: calc(176px + env(safe-area-inset-bottom)); }
+  .messages { padding: var(--sp-4) var(--sp-4) var(--sp-2); }
+  .page-characters, .page-world, .page-settings, .page-rules { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  .tab { font-size: 10px; }
+  .tab .icon, .tab .icon svg { width: 18px; height: 18px; }
+  .token-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* 桌面：侧栏常驻，隐藏底部 tab */
+@media (min-width: 720px) {
+  .tabbar { display: none; }
+  .menu-btn { display: none; }
+  .page-characters, .page-world, .page-settings, .page-rules { padding-bottom: var(--sp-8); }
+  .composer-hint { display: block; }
+  .messages { padding: var(--sp-8) var(--sp-6); }
+  .chat-header { padding: 0 var(--sp-6); }
+  .composer-wrap { padding: var(--sp-3) var(--sp-6) var(--sp-4); }
+}
+
+/* 窄屏表单堆叠 */
+@media (max-width: 420px) {
+  .form-row { flex-direction: column; gap: 0; }
+  .page-header { align-items: flex-start; }
+  .character-grid, .rule-list, .world-list, .preset-list { grid-template-columns: 1fr; }
+  .world-profiles { grid-template-columns: 1fr; }
+}
+
+/* 降低动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
