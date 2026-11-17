@@ -1,7 +1,7 @@
 // settings.js — 设置页
 import * as state from '../state.js';
 import * as storage from '../storage.js';
-import { buildSystem, estimateTokens } from '../api.js';
+import { buildSystem, estimateTokens, testConnection, composePlanParts } from '../api.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -39,11 +39,11 @@ function updateEstimate() {
   const s = state.getState();
   const settings = s.settings;
   const char = state.activeCharacter() || { systemPrompt: '' };
-  const world = state.activeWorldText(state.activeMessages(), '', settings.worldEntryLimit).text;
+  const world = state.activeWorldText(state.activeMessages(), '', settings.worldEntryLimit, char.id).text;
   const plan = state.buildPresetPlan(char, state.activeMessages(), '', settings);
   const sys = plan
-    ? plan.systemParts.map(p => p.text).join('\n\n')
-    : buildSystem(char, state.activeRulesText(), settings, world, state.activePresetText(char));
+    ? composePlanParts(plan, settings.promptCharLimit).join('\n\n')
+    : buildSystem(char, state.activeRulesText(char.id), settings, world, state.activePresetText(char));
 
   let recent = state.activeMessages().filter(m => m.status !== 'error' && m.content)
     .slice(-Math.max(1, settings.contextLimit || 20));
@@ -80,6 +80,85 @@ function renderTokenStats() {
     ? '<div class="token-days-title">最近使用</div>' + days.map(([day, v]) =>
       `<div class="token-day"><span>${day}</span><span>${num(v.totalTokens)} tokens · ${num(v.requests)} 次</span></div>`).join('')
     : '<p class="form-help">还没有记录。发送一条消息后，这里会显示 API 返回的真实 token 数。</p>';
+}
+
+let connController = null;
+let connTimer = null;
+/** 连通性测试的硬超时：部分网络会长时间挂住，不主动 abort 会一直卡在「测试中…」 */
+const CONN_TIMEOUT_MS = 10000;
+
+/** 读取表单里当前的 API 参数（尚未保存也能测） */
+function currentApiSettings() {
+  return {
+    baseURL: ($('#setting-baseurl').value || '').trim(),
+    apiKey: ($('#setting-apikey').value || '').trim(),
+    model: ($('#setting-model').value || '').trim(),
+  };
+}
+
+function showConn(html) {
+  const box = $('#conn-result');
+  box.hidden = false;
+  box.innerHTML = html;
+}
+
+function escapeHTML(str = '') {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function runConnectionTest() {
+  if (connController) return; // 测试中
+  const btn = $('#test-conn-btn');
+  btn.disabled = true;
+  btn.querySelector('span:last-child').textContent = '测试中…';
+  showConn('<div class="conn-line conn-busy"><span class="spinner"></span>正在测试连接…</div>');
+
+  const controller = new AbortController();
+  connController = controller;
+  connTimer = setTimeout(() => controller.abort(), CONN_TIMEOUT_MS);
+  const started = Date.now();
+  try {
+    const result = await testConnection(currentApiSettings(), controller.signal);
+    const ms = result.latencyMs || (Date.now() - started);
+    if (result.ok) {
+      const models = result.models || [];
+      let modelsHTML = '';
+      if (models.length) {
+        const shown = models.slice(0, 12);
+        modelsHTML = '<div class="conn-models-title">检测到的模型（点击填入上面的模型框）</div><div class="conn-models">' +
+          shown.map(m => `<button type="button" class="conn-model-chip" data-action="pick-model" data-model="${escapeHTML(m)}">${escapeHTML(m)}</button>`).join('') +
+          (models.length > shown.length ? `<span class="conn-more">…另有 ${models.length - shown.length} 个</span>` : '') +
+          '</div>';
+      }
+      showConn(
+        `<div class="conn-line conn-ok"><span class="conn-dot"></span><span>${escapeHTML(result.message)}</span><span class="conn-ms">${ms} ms</span></div>` +
+        `<div class="conn-sub">验证方式：${result.method === 'models' ? 'GET /v1/models（未消耗 token）' : '最小聊天请求（约 1 token）'}</div>` + modelsHTML
+      );
+    } else {
+      const tips = {
+        no_key: '在上方填写 API Key 后再测试。',
+        bad_key: 'API 密钥应填在「API Key」框，API 地址填在「API 地址」框。',
+        bad_url: '填写 OpenAI 兼容的根地址，例如 https://api.deepseek.com 或 https://api.openai.com/v1。',
+        auth: '检查密钥是否正确、是否过期，以及是否选对了服务商。',
+        quota: '账户余额不足或触发限流，请充值或稍后再试。',
+        network: '检查网络、代理或防火墙；国内访问部分海外 API 可能需要代理。',
+        timeout: '服务端长时间未响应，检查地址是否正确或换网络重试。',
+        http: '服务端返回了错误，可看下方说明调整地址或参数。',
+      };
+      showConn(
+        `<div class="conn-line conn-fail"><span class="conn-dot"></span><span>${escapeHTML(result.message)}</span><span class="conn-ms">${ms} ms</span></div>` +
+        `<div class="conn-sub">${escapeHTML(tips[result.kind] || '请检查 API 配置。')}</div>`
+      );
+    }
+  } catch (err) {
+    showConn(`<div class="conn-line conn-fail"><span class="conn-dot"></span>${escapeHTML(err?.message || '测试失败')}</div>`);
+  } finally {
+    clearTimeout(connTimer);
+    connTimer = null;
+    if (connController === controller) connController = null;
+    btn.disabled = false;
+    btn.querySelector('span:last-child').textContent = '测试连接';
+  }
 }
 
 export function renderSettings() {
@@ -162,7 +241,12 @@ export function initSettings(confirmFn) {
     const actionEl = e.target.closest('[data-action]');
     if (!actionEl) return;
     const action = actionEl.dataset.action;
-    if (action === 'usage-preset') {
+    if (action === 'test-connection') {
+      runConnectionTest();
+    } else if (action === 'pick-model') {
+      $('#setting-model').value = actionEl.dataset.model || '';
+      note(`已选择模型：${actionEl.dataset.model}`);
+    } else if (action === 'usage-preset') {
       applyPreset(actionEl.dataset.preset);
     } else if (action === 'export-data') {
       const includeKey = window.confirm('导出的备份是否包含 API Key？\n\n选择「取消」将脱敏导出（推荐），选择「确定」则包含密钥，请妥善保管文件。');

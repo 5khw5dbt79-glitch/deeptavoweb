@@ -100,6 +100,7 @@
           </button>
         </header>
         <p class="rules-intro world-intro">世界书保存角色所处的世界、你们的共同经历与需要一直记住的事。常驻条目每次都会带上；其他条目只在对话提到它的关键词时自动加入。下面的主角设定与长期记忆同样会随每次对话发送。</p>
+        <div id="world-scope"></div>
         <div class="world-profiles">
           <article class="profile-card" id="protagonist-card"></article>
           <article class="profile-card" id="memory-card"></article>
@@ -118,6 +119,7 @@
             <span class="icon" data-icon="plus"></span><span>新建规则</span>
           </button>
         </header>
+        <div id="rules-scope"></div>
         <div class="preset-section">
           <div class="preset-section-head">
             <div>
@@ -157,6 +159,18 @@
             <label class="form-label" for="setting-apikey">API Key</label>
             <input class="form-input" id="setting-apikey" name="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…">
             <p class="form-help">仅保存在本机浏览器，不会上传到任何第三方</p>
+          </div>
+          <div class="conn-test" id="conn-test">
+            <div class="conn-test-head">
+              <div>
+                <div class="conn-test-title">连通性测试</div>
+                <p class="form-help">按 APP 的方式：先读取模型列表（不花钱），不支持时再发一次极小的聊天请求。</p>
+              </div>
+              <button class="secondary-btn sm-btn" type="button" data-action="test-connection" id="test-conn-btn">
+                <span class="icon" data-icon="plugin"></span><span>测试连接</span>
+              </button>
+            </div>
+            <div class="conn-result" id="conn-result" hidden role="status"></div>
           </div>
           <div class="form-row">
             <div class="form-group">

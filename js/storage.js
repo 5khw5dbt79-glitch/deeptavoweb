@@ -128,6 +128,68 @@ export function defaultProtagonist() {
   };
 }
 
+/** 规则书条目字段补全（兼容旧数据） */
+function normalizeRules(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter(r => r && typeof r === 'object' && typeof r.content === 'string')
+    .map(r => ({
+      id: r.id || `rule_${Math.random().toString(36).slice(2, 8)}`,
+      name: r.name || '未命名规则',
+      content: r.content,
+      builtin: !!r.builtin,
+      enabled: !!r.enabled,
+    }));
+}
+
+/** 世界书条目字段补全（兼容旧数据） */
+function normalizeWorldEntries(raw) {
+  return (Array.isArray(raw) ? raw : [])
+    .filter(w => w && typeof w === 'object' && typeof w.content === 'string')
+    .map(w => ({
+      id: w.id || `world_${Math.random().toString(36).slice(2, 8)}`,
+      name: w.name || '未命名条目',
+      content: w.content,
+      keys: typeof w.keys === 'string' ? w.keys : Array.isArray(w.keys) ? w.keys.join(',') : '',
+      constant: !!w.constant,
+      builtin: !!w.builtin,
+      enabled: w.enabled !== false,
+    }));
+}
+
+/**
+ * 角色专属设定集（整套）：规则书 / 世界书 / 主角 / 记忆 四件套打包。
+ * 存在即代表该角色与「通用设定」脱钩；不存在时读取端回落到顶层通用设定，
+ * 所以老数据无需迁移，未编辑过的角色行为也不变。
+ */
+export function normalizeCharacterScope(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    rules: normalizeRules(raw.rules),
+    worldBooks: normalizeWorldEntries(raw.worldBooks),
+    protagonist: { ...defaultProtagonist(), ...(raw.protagonist || {}) },
+    memory: { enabled: true, content: '', ...(raw.memory || {}) },
+    forkedAt: Number(raw.forkedAt) || 0,
+  };
+}
+
+/** 角色对象补全：补齐字段并规范化可能存在的专属设定 */
+function normalizeCharacter(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.id) return null;
+  const char = {
+    id: String(raw.id),
+    name: String(raw.name || '未命名角色'),
+    description: String(raw.description || ''),
+    systemPrompt: String(raw.systemPrompt || ''),
+    greeting: String(raw.greeting || ''),
+    color: String(raw.color || '#E0B872'),
+    createdAt: Number(raw.createdAt) || Date.now(),
+    updatedAt: Number(raw.updatedAt) || Number(raw.createdAt) || Date.now(),
+  };
+  const scoped = normalizeCharacterScope(raw.scoped);
+  if (scoped) char.scoped = scoped;
+  return char;
+}
+
 export function defaultState() {
   return {
     version: 1,
@@ -188,7 +250,7 @@ export function load() {
         days: data.usage?.days && typeof data.usage.days === 'object' ? data.usage.days : {},
         recent: Array.isArray(data.usage?.recent) ? data.usage.recent.slice(-20) : [],
       },
-      characters: Array.isArray(data.characters) ? data.characters : [],
+      characters: (Array.isArray(data.characters) ? data.characters : []).map(normalizeCharacter).filter(Boolean),
       conversations: data.conversations && typeof data.conversations === 'object' ? data.conversations : {},
     };
     // 自愈：activeCharacterId 必须指向存在的角色
@@ -196,8 +258,7 @@ export function load() {
       state.activeCharacterId = state.characters[0]?.id || null;
     }
     // 规则书条目字段补全（兼容旧数据）
-    state.rules = state.rules.filter(r => r && typeof r === 'object' && typeof r.content === 'string')
-      .map(r => ({ id: r.id || `rule_${Math.random().toString(36).slice(2, 8)}`, name: r.name || '未命名规则', content: r.content, builtin: !!r.builtin, enabled: !!r.enabled }));
+    state.rules = normalizeRules(state.rules);
     // 预设字段补全（兼容旧版只有 content 的预设）
     state.presets = state.presets
       .filter(p => p && typeof p === 'object')
@@ -247,17 +308,7 @@ export function load() {
       state.activePresetId = null;
     }
     // 世界书条目字段补全（兼容旧数据）
-    state.worldBooks = state.worldBooks
-      .filter(w => w && typeof w === 'object' && typeof w.content === 'string')
-      .map(w => ({
-        id: w.id || `world_${Math.random().toString(36).slice(2, 8)}`,
-        name: w.name || '未命名条目',
-        content: w.content,
-        keys: typeof w.keys === 'string' ? w.keys : Array.isArray(w.keys) ? w.keys.join(',') : '',
-        constant: !!w.constant,
-        builtin: !!w.builtin,
-        enabled: w.enabled !== false,
-      }));
+    state.worldBooks = normalizeWorldEntries(state.worldBooks);
     // 主角档案字段补全
     state.protagonist = { ...base.protagonist, ...(state.protagonist || {}) };
     state.memory = { ...base.memory, ...(state.memory || {}) };

@@ -25,6 +25,7 @@ export const ICONS = {
   up: wrap('<path d="m18 15-6-6-6 6"/>'),
   eyeOff: wrap('<path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c6 0 10 6 10 6a17 17 0 0 1-2.2 3.2M6.6 6.6A17 17 0 0 0 2 10s4 6 10 6a10 10 0 0 0 4.4-1M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/>'),
   code: wrap('<path d="m8 8-4 4 4 4m8-8 4 4-4 4m-3-11-2 14"/>'),
+  plugin: wrap('<path d="M9 3v3M15 3v3M7 6h10a2 2 0 0 1 2 2v3a3 3 0 0 0 0 6v1a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1a3 3 0 0 0 0-6V8a2 2 0 0 1 2-2z"/>'),
 };
 
 export function paintIcons(root = document) {

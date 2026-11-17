@@ -2,6 +2,7 @@
 import { ICONS, paintIcons } from '../icons.js';
 import * as state from '../state.js';
 import { makePresetBlocks } from '../storage.js';
+import { renderScopeBar } from './scope.js';
 
 const $ = (sel) => document.querySelector(sel);
 const PRESET_DEFS = state.PRESET_BLOCK_DEFS;
@@ -184,7 +185,8 @@ export function handlePresetAction(action, id, confirmFn) {
 // ---- 规则书 ----
 export function renderRules() {
   renderPresets();
-  const rules = state.getState().rules;
+  renderScopeBar('#rules-scope', 'rules');
+  const rules = state.viewScope().rules;
   $('#rule-count').textContent = `共 ${rules.length} 条规则 · 已启用 ${rules.filter(r => r.enabled).length} 条`;
 
   const list = $('#rule-list');
@@ -230,7 +232,7 @@ export function renderRules() {
 export function openRuleModal(id = null) {
   const form = $('#rule-form');
   form.reset();
-  const rule = id ? state.getState().rules.find(r => r.id === id) : null;
+  const rule = id ? state.viewScope().rules.find(r => r.id === id) : null;
   $('#rule-modal-title').textContent = rule ? '编辑规则' : '新建规则';
   $('#rule-id').value = rule?.id || '';
   $('#rule-name').value = rule?.name || '';
@@ -349,7 +351,7 @@ export function handleRuleAction(action, id, confirmFn) {
   else if (action === 'new-rule') openRuleModal();
   else if (action === 'edit-rule') openRuleModal(id);
   else if (action === 'delete-rule') {
-    const rule = state.getState().rules.find(r => r.id === id);
+    const rule = state.viewScope().rules.find(r => r.id === id);
     if (!rule) return;
     confirmFn?.('删除规则', `确定删除「${rule.name}」吗？此操作无法撤销。`, () => state.deleteRule(id), '删除');
   }

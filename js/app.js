@@ -7,6 +7,7 @@ import * as characters from './components/characters.js';
 import * as rules from './components/rules.js';
 import * as world from './components/world.js';
 import * as settings from './components/settings.js';
+import * as scope from './components/scope.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -141,6 +142,7 @@ characters.initCharacters(openConfirm);
 rules.initRules(openConfirm);
 world.initWorld(openConfirm);
 settings.initSettings(openConfirm);
+scope.initScope(openConfirm);
 
 state.subscribe((_s, hint) => {
   // 'messages' 变化由 chat.js 做局部 DOM 更新，不整页重渲染（否则打断流式打字）
@@ -150,6 +152,12 @@ state.subscribe((_s, hint) => {
   if (hint === 'characters') {
     if (page === 'characters') characters.renderCharacters();
     if (page === 'chat') chat.renderChat();
+    // 切换角色后，规则书 / 世界书页要跟着切到该角色的那一套
+    if (page === 'rules') rules.renderRules();
+    if (page === 'world') world.renderWorld();
+  } else if (hint === 'scope' && (page === 'rules' || page === 'world')) {
+    if (page === 'rules') rules.renderRules();
+    else world.renderWorld();
   } else if (hint === 'rules' && page === 'rules') {
     rules.renderRules();
   } else if (hint === 'presets' && page === 'rules') {

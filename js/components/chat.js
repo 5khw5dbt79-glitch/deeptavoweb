@@ -137,8 +137,8 @@ export async function sendMessage() {
     const full = await streamChat({
       settings: s.settings,
       character: char,
-      rulesText: state.activeRulesText(),
-      worldText: state.activeWorldText(history, text, s.settings.worldEntryLimit).text,
+      rulesText: state.activeRulesText(char.id),
+      worldText: state.activeWorldText(history, text, s.settings.worldEntryLimit, char.id).text,
       presetText: state.activePresetText(char),
       plan: state.buildPresetPlan(char, history, text, s.settings),
       history,

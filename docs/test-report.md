@@ -107,3 +107,41 @@
 - 回归：23/23、23/23、32/32、31/31、49/49 全部通过。
 - 截图：`screenshots/tokens-mobile.png`、`screenshots/tokens-desktop.png`。
 - 未验证项：没有真实 DeepSeek Key，流式 usage 由模拟 SSE 断言；实际服务端是否返回 usage 取决于账号与服务实现。
+
+## 11. 连通性测试（2026-11-18）
+
+- 参考 Tavo APP 的 API 设置（原生库中提取到「正在测试连接...」「API 基础 URL 不正确」「网络错误，请检查当前网络环境能否访问 API」，以及 `GET /v1/models` 加载模型列表的逻辑）。
+- `api.js` 新增 `testConnection`：先校验地址与 Key（含「把网址填进 Key」「把 Key 填进地址」），再 `GET {base}/v1/models` 拉取模型；404/405 回退到 `max_tokens:1` 的最小聊天请求；401/402 直接判失败不回退。返回成功/失败类型、耗时、模型列表。
+- 设置页新增「连通性测试」区块：用当前表单值测试（无需先保存），成功显示模型 chip（点击填入模型框）、验证方式与延迟；失败按类型给出排查建议。
+- `e2e-connection.mjs`：**30/30 通过**。覆盖 URL/Key 校验不发请求、模型列表成功与空列表、chip 填入、404 回退且 max_tokens=1、401/402 不回退、网络错误提示、按钮状态恢复、无控制台错误。
+- **测试稳定性修复**：`e2e-test.mjs` 原本用假 Key 发真实请求期望 401，环境代理不通时变成网络错误导致误报；现改为 mock 401，保持验证意图且不再依赖外网。
+- 回归：23/23、23/23、32/32、31/31、49/49、25/25 全部通过。
+- 截图：`screenshots/connection-idle-mobile.png`、`screenshots/connection-success-mobile.png`、`screenshots/connection-fail-mobile.png`、`screenshots/connection-desktop.png`。
+
+## 12. 代码审查后的两个真实缺陷修复（2026-11-18）
+
+**缺陷 1：预设模式下，提示词预算把「块顺序」打乱。**
+原实现把所有 `budgeted` 块（世界书、主角、角色描述、场景、规则书等）拼成一个大字符串，整段裁剪后再插到**第一个**预算块的位置，其余预算块位置被清空。结果是：用户把世界书块拖到 Main 前面之后，角色描述 / 场景 / 规则书也跟着一起被搬到 Main 前面，编辑器里调好的顺序在发送时失效。
+修复：`api.js` 新增导出的 `composePlanParts(plan, promptCharLimit)`，**逐块就地裁剪**——每块按「剩余预算」裁剪，位置保持不变，相邻预算块之间的 `\n\n` 也计入预算；非预算块（Main、角色性格、前后缀）不参与裁剪。`buildMessages` 与设置页估算都改为调用它，保证「显示的数字」与「实际发送」一致。
+
+**缺陷 2：连通性测试的 `AbortController` 从未被中止。**
+原实现创建了 `AbortController` 并把它传给 `testConnection`，但没有任何地方调用 `abort()`。服务端挂住不响应（或被墙、被代理吞包）时，请求可以一直挂着，按钮永远停在「测试中…」，因为 `connController` 非空，连再点一次都不会响应。
+修复：加 10s 硬超时 `setTimeout(() => controller.abort(), CONN_TIMEOUT_MS)`，`finally` 里 `clearTimeout` 并按引用比对重置 `connController`；`AbortError` 归类为 `timeout`，给出「连接超时，请检查网络或代理」。
+
+- 新增回归断言：`e2e-presets.mjs` 加 7 条（预算裁剪后 Main 仍在角色描述之前、世界书仍在 Main 之前、角色描述未被误删、估算字符数与实际发送一致、超限仍截断、有省略提示、非预算块不受影响）；`e2e-connection.mjs` 加 3 条（测试中按钮禁用、挂住约 10s 自动中止并提示超时、超时后按钮恢复）。
+- 实测超时触发耗时 **10001 ms**，与 10s 阈值一致。
+- 全量回归（7 个套件，共 223 条）：**23/23、23/23、32/32、31/31、56/56、25/25、33/33 全部通过**。
+
+## 13. 角色独立设定：规则书 / 世界书 / 主角 / 记忆按角色整套隔离（2026-11-18）
+
+- 背景：此前 `rules` / `worldBooks` / `protagonist` / `memory` 都是顶层全局单例，所有角色共用一套，切换角色只切 `conversations[characterId]`。后果是修仙角色与都市角色的世界书互相串台、同一个玩家无法在不同角色里拥有不同身份、剧情记忆会「想起」别的角色的事。
+- 数据模型：`character.scoped = { rules, worldBooks, protagonist, memory, forkedAt }`。存在即代表该角色与通用设定脱钩；不存在时读取端回落到顶层通用设定（老数据零迁移）。`storage.js` 新增 `normalizeCharacterScope` / `normalizeCharacter`，加载时自愈补齐。
+- 作用域解析（`state.js`）：`scopeOf(charId)` 用于注入（只认当前对话角色）、`viewScope()` 用于页面渲染、`editingScope()` 用于写入（目标角色未独立时整套 fork）、`forkScope()` / `resetScope()` 供 UI 显式切换。`globalScope()` 用 getter/setter 固定引用，写入既能 `push` 也能整体替换。
+- 新建角色即 fork：`addCharacter()` 直接复制当前通用设定，避免多个新角色共享同一套模板。切换角色时 `editScopeId` 重置，设定页自动跟随新角色。
+- 注入链路：`activeRulesText(charId)`、`activeWorldParts(history, input, limit, charId)`、`expandMacros()`（`{{user}}` 取该角色的主角名）、`buildPresetPlan()` 全部按角色取设定；`chat.js` / `settings.js` 估算显式传 `char.id`。
+- UI：新增 `js/components/scope.js`，规则书页与世界书页顶部各有「设定范围」下拉（通用模板 / 各角色，独立角色标 `· 独立`）+「改为独立」/「恢复跟随通用」（后者有二次确认）。切换后经 `hint === 'scope'` 重渲染当前页。
+- **顺带修复**：`world.js` 长期记忆开关调用 `state.toggleMemory()`，但该函数从未定义（点了会抛错），本次补齐。
+- `e2e-scope.mjs`：**37/37 通过**。覆盖默认跟随当前角色、切换角色、编辑即整套独立、fork 继承通用条目、两个角色的世界书/规则书/主角/记忆四类注入互不串台、恢复跟随通用后不再注入旧专属内容、新建角色自带独立设定、无控制台错误。
+- 全量回归（8 套，共 260 条）：**23/23、23/23、32/32、31/31、56/56、25/25、33/33、37/37 全部通过**。
+- 截图：`screenshots/scope-world-mobile.png`、`screenshots/scope-rules-mobile.png`、`screenshots/scope-world-desktop.png`、`screenshots/scope-rules-desktop.png`。
+- 未验证项：没有做多角色大规模数据压力测试（例如 20 个角色各带长世界书的 localStorage 体积），当前数据量级下不是瓶颈。

@@ -1,6 +1,7 @@
 // world.js — 世界书页：世界条目 / 主角档案 / 长期记忆
 import { ICONS } from '../icons.js';
 import * as state from '../state.js';
+import { renderScopeBar } from './scope.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -14,10 +15,11 @@ function brief(str = '', n = 120) {
 }
 
 export function renderWorld() {
-  const s = state.getState();
-  const entries = s.worldBooks || [];
-  const p = s.protagonist || {};
-  const m = s.memory || {};
+  renderScopeBar('#world-scope', 'world');
+  const scope = state.viewScope();
+  const entries = scope.worldBooks || [];
+  const p = scope.protagonist || {};
+  const m = scope.memory || {};
 
   $('#world-entry-count').textContent =
     `共 ${entries.length} 条条目 · 常驻 ${entries.filter(e => e.constant).length} 条 · 已启用 ${entries.filter(e => e.enabled).length} 条`;
@@ -108,7 +110,7 @@ export function renderWorld() {
 export function openWorldModal(id = null) {
   const form = $('#world-form');
   form.reset();
-  const entry = id ? state.getState().worldBooks.find(w => w.id === id) : null;
+  const entry = id ? state.viewScope().worldBooks.find(w => w.id === id) : null;
   $('#world-modal-title').textContent = entry ? '编辑条目' : '新建世界书条目';
   $('#world-entry-id').value = entry?.id || '';
   $('#world-entry-name').value = entry?.name || '';
@@ -123,7 +125,7 @@ export function openWorldModal(id = null) {
 export function closeWorldModal() { $('#world-modal').hidden = true; }
 
 export function openProtagonistModal() {
-  const p = state.getState().protagonist;
+  const p = state.viewScope().protagonist;
   $('#protagonist-enabled').checked = !!p.enabled;
   $('#protagonist-name').value = p.name || '';
   $('#protagonist-title').value = p.title || '';
@@ -139,7 +141,7 @@ export function openProtagonistModal() {
 export function closeProtagonistModal() { $('#protagonist-modal').hidden = true; }
 
 export function openMemoryModal() {
-  const m = state.getState().memory;
+  const m = state.viewScope().memory;
   $('#memory-enabled').checked = !!m.enabled;
   $('#memory-content').value = m.content || '';
   $('#memory-modal').hidden = false;
@@ -206,7 +208,7 @@ export function handleWorldAction(action, id, confirmFn) {
   if (action === 'new-world-entry') openWorldModal();
   else if (action === 'edit-world-entry') openWorldModal(id);
   else if (action === 'delete-world-entry') {
-    const entry = state.getState().worldBooks.find(w => w.id === id);
+    const entry = state.viewScope().worldBooks.find(w => w.id === id);
     if (!entry) return;
     confirmFn?.('删除条目', `确定删除「${entry.name}」吗？此操作无法撤销。`, () => state.deleteWorldEntry(id), '删除');
   } else if (action === 'edit-protagonist') openProtagonistModal();

@@ -43,6 +43,116 @@ function endpoint(settings) {
   return `${base}/chat/completions`;
 }
 
+/** 归一化 API 根地址：去掉结尾斜杠与 /chat/completions，保留 /v1 */
+function normalizeBase(baseURL = '') {
+  let base = String(baseURL || '').trim().replace(/\/+$/, '');
+  if (/\/chat\/completions$/.test(base)) base = base.replace(/\/chat\/completions$/, '').replace(/\/+$/, '');
+  return base || 'https://api.deepseek.com';
+}
+
+/** 模型列表地址：兼容 https://host/v1 与 https://host 两种写法 */
+function modelsEndpoint(base) {
+  return /\/v1$/i.test(base) ? `${base}/models` : `${base}/v1/models`;
+}
+
+/**
+ * 连通性测试（参考 Tavo APP 的「测试连接」）。
+ * 先用 GET /v1/models 拉取模型列表（不消耗 token）；若服务端不支持该端点，
+ * 再回退到一次 max_tokens=1 的最小聊天请求。
+ * @returns {Promise<{ok:boolean,kind:string,message:string,models:string[],latencyMs:number,method:string}>}
+ */
+export async function testConnection(settings = {}, signal = null) {
+  const baseURL = normalizeBase(settings.baseURL);
+  const apiKey = String(settings.apiKey || '').trim();
+
+  // 校验顺序参考 APP：先 URL，再 Key
+  if (/^https?:\/\//i.test(apiKey)) {
+    return { ok: false, kind: 'bad_key', message: '这里要填 API 密钥，不是网址', models: [], latencyMs: 0, method: '' };
+  }
+  if (/^sk[-_]/i.test(baseURL) || (!/^https?:\/\//i.test(baseURL))) {
+    return { ok: false, kind: 'bad_url', message: 'API 地址不正确，应形如 https://api.deepseek.com/v1', models: [], latencyMs: 0, method: '' };
+  }
+  if (!apiKey) {
+    return { ok: false, kind: 'no_key', message: '请先填写 API 密钥', models: [], latencyMs: 0, method: '' };
+  }
+
+  const started = Date.now();
+  const latency = () => Date.now() - started;
+  const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  const classifyHttp = (status, detail = '') => {
+    if (status === 401 || status === 403) return { kind: 'auth', message: '密钥无效或已过期（401/403）' };
+    if (status === 402 || status === 429) return { kind: 'quota', message: detail || '余额不足或请求过于频繁' };
+    return { kind: 'http', message: detail || `请求失败（HTTP ${status}）` };
+  };
+
+  // 第一步：GET /v1/models
+  try {
+    const res = await fetch(modelsEndpoint(baseURL), { method: 'GET', headers, signal });
+    if (res.ok) {
+      let models = [];
+      try {
+        const data = await res.json();
+        const list = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        models = list.map(m => (typeof m === 'string' ? m : m?.id)).filter(Boolean).map(String);
+      } catch (_) { /* 响应不是 JSON，仍视为连通 */ }
+      return {
+        ok: true,
+        kind: 'success',
+        message: models.length
+          ? `连接成功 · 检测到 ${models.length} 个模型`
+          : '连接成功 · 该服务未在模型列表中返回模型',
+        models,
+        latencyMs: latency(),
+        method: 'models',
+      };
+    }
+    // 401/403/余额 直接判失败，不必再试聊天端点
+    if (res.status === 401 || res.status === 403 || res.status === 402 || res.status === 429) {
+      let detail = '';
+      try { detail = (await res.json())?.error?.message || ''; } catch (_) {}
+      const c = classifyHttp(res.status, detail);
+      return { ok: false, kind: c.kind, message: c.message, models: [], latencyMs: latency(), method: 'models' };
+    }
+    // 404/405 等：服务端可能没实现 models，继续走聊天端点
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      return { ok: false, kind: 'timeout', message: '连接超时，请检查网络或代理', models: [], latencyMs: latency(), method: 'models' };
+    }
+    return { ok: false, kind: 'network', message: '网络错误，请检查当前网络能否访问该 API 地址', models: [], latencyMs: latency(), method: 'models' };
+  }
+
+  // 第二步：最小聊天请求（不产生实质内容）
+  try {
+    const res = await fetch(endpoint(settings), {
+      method: 'POST',
+      headers,
+      signal,
+      body: JSON.stringify({
+        model: String(settings.model || 'deepseek-chat').trim(),
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+    });
+    if (res.ok) {
+      return { ok: true, kind: 'success', message: '连接成功 · 聊天端点可用（模型列表不可用，已回退验证）', models: [], latencyMs: latency(), method: 'chat' };
+    }
+    let detail = '';
+    try { detail = (await res.json())?.error?.message || ''; } catch (_) {}
+    const c = classifyHttp(res.status, detail);
+    return { ok: false, kind: c.kind, message: c.message, models: [], latencyMs: latency(), method: 'chat' };
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      return { ok: false, kind: 'timeout', message: '连接超时，请检查网络或代理', models: [], latencyMs: latency(), method: 'chat' };
+    }
+    return { ok: false, kind: 'network', message: '网络错误，请检查当前网络能否访问该 API 地址', models: [], latencyMs: latency(), method: 'chat' };
+  }
+}
+
 /**
  * 按字符预算裁剪提示词片段。按空行分段保留，避免把一段设定从中间切断。
  * 角色设定与全局前后缀不参与裁剪，只裁剪世界书 + 规则书。
@@ -82,6 +192,38 @@ export function buildSystem(character, rulesText, settings, worldText = '', pres
   return parts.join('\n\n');
 }
 
+/**
+ * 按预设块顺序组装 system 片段。
+ * 预算块（世界书 / 规则书等）各自按「剩余字符预算」就地裁剪，位置保持用户设定的顺序；
+ * 非预算块（主提示词 / 角色性格 / 前后缀）不参与裁剪。budget 为 0 表示不限制。
+ * 设置页的估算与本函数共用，保证显示的字符数与实际发送一致。
+ */
+export function composePlanParts(plan, promptCharLimit = 0) {
+  const budget = Math.max(0, Number(promptCharLimit) || 0);
+  let remaining = budget > 0 ? budget : Infinity;
+  let budgetedCount = 0;
+  const out = [];
+  for (const part of plan?.systemParts || []) {
+    if (!part?.budgeted) {
+      if (part?.text) out.push(part.text);
+      continue;
+    }
+    if (remaining <= 0) continue;
+    // 相邻预算块之间实际会用 '\n\n' 连接，这 2 个字符也要计入预算
+    const sep = budgetedCount ? 2 : 0;
+    const allowance = remaining === Infinity ? Infinity : remaining - sep;
+    if (allowance <= 0) continue;
+    const piece = allowance === Infinity
+      ? String(part.text || '').trim()
+      : trimByBudget(part.text, allowance);
+    if (!piece) continue;
+    out.push(piece);
+    budgetedCount += 1;
+    if (remaining !== Infinity) remaining -= piece.length + sep;
+  }
+  return out;
+}
+
 function buildMessages(character, history, userInput, contextLimit, rulesText, settings, worldText, presetText = '', plan = null) {
   let recent = history.filter(m => m.status !== 'error' && m.content).slice(-Math.max(1, contextLimit));
   // 历史字符上限：超限时从最早的开始丢弃，至少保留最近一条
@@ -100,21 +242,9 @@ function buildMessages(character, history, userInput, contextLimit, rulesText, s
     return messages;
   }
 
-  // 启用预设：按预设中的块顺序构建
-  const budget = Math.max(0, Number(settings.promptCharLimit) || 0);
-  const budgeted = plan.systemParts.filter(p => p.budgeted).map(p => p.text);
-  const trimmed = budgeted.length ? trimByBudget(budgeted.join('\n\n'), budget) : '';
-  const system = [];
-  let inserted = false;
-  for (const part of plan.systemParts) {
-    if (part.budgeted) {
-      if (!inserted) { if (trimmed) system.push(trimmed); inserted = true; }
-      continue;
-    }
-    system.push(part.text);
-  }
+  // 启用预设：严格按预设中的块顺序构建（预算块逐个裁剪，不合并、不搬位置）
   const messages = [];
-  const systemText = system.join('\n\n').trim();
+  const systemText = composePlanParts(plan, settings.promptCharLimit).join('\n\n').trim();
   if (systemText) messages.push({ role: 'system', content: systemText });
   for (const ex of plan.examples || []) messages.push({ role: ex.role, content: ex.content });
   if (plan.useHistory !== false) messages.push(...historyMessages);

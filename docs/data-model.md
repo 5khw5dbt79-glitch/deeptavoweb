@@ -20,6 +20,8 @@
 }
 ```
 
+- 顶层的 `rules` / `worldBooks` / `protagonist` / `memory` 是「通用设定」：既是所有未独立角色的回落来源，也是新建角色的初始模板。详见 2.1。
+
 ## 2. Character（角色卡）
 
 ```js
@@ -31,9 +33,29 @@
   greeting: "这么晚了，还在找书吗？", // 开场白，首次进入时生成角色首条消息
   color: "#E0B872",                 // 角色标识色（用于头像与消息竖线）
   createdAt: 1700000000000,
-  updatedAt: 1700000000000
+  updatedAt: 1700000000000,
+  scoped: CharacterScope | undefined // 该角色的独立设定集，见 2.1
 }
 ```
+
+## 2.1 CharacterScope（角色独立设定集）
+
+```js
+{
+  rules: [ Rule ],            // 该角色专属规则书
+  worldBooks: [ WorldEntry ], // 该角色专属世界书条目
+  protagonist: Protagonist,   // 该角色里「玩家」的身份
+  memory: { enabled, content },// 该角色专属长期记忆
+  forkedAt: 1700000000000     // 从通用设定复制过来的时间
+}
+```
+
+- **存在即独立**：`scoped` 一旦存在，该角色的四类设定全部与顶层通用设定脱钩。
+- **不存在则回落**：读取端（注入、页面渲染）回落到顶层的 `rules` / `worldBooks` / `protagonist` / `memory`，所以老数据零迁移，未编辑过的角色行为不变。
+- **写入即 fork**：在某角色名下做第一次修改时，`editingScope()` 把通用设定整套深拷贝一份写入 `scoped`，之后只改这份副本。
+- **新建角色立即 fork**：`addCharacter()` 直接复制当前通用设定，避免多个新角色共享同一套模板。
+- **恢复跟随通用**：删除 `scoped` 字段，回到回落状态（UI 有二次确认）。
+- 注入只认「当前对话角色」的 `scoped`，与页面上正在编辑谁无关，避免看着 A 的设定给 B 发消息。
 
 ## 3. Message（消息）
 

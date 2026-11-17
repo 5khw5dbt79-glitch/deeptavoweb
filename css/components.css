@@ -347,3 +347,63 @@
 .token-day:last-child { border-bottom: 0; }
 .token-day span:last-child { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .token-stats-head .secondary-btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* ---- 连通性测试 ---- */
+.conn-test { margin: var(--sp-2) 0 var(--sp-5); border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--surface); padding: var(--sp-4); }
+.conn-test-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.conn-test-head .form-help { margin-top: 4px; }
+.conn-test-title { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.conn-test-head .secondary-btn { flex: 0 0 auto; white-space: nowrap; }
+.conn-test-head .secondary-btn .icon, .conn-test-head .secondary-btn .icon svg { width: 14px; height: 14px; }
+.conn-test-head .secondary-btn:disabled { opacity: .6; cursor: wait; }
+.conn-result { margin-top: var(--sp-3); border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.conn-result[hidden] { display: none; }
+.conn-line { display: flex; align-items: center; gap: var(--sp-2); font-size: 13px; line-height: 1.5; }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+.conn-ok { color: #7fbf9a; }
+.conn-ok .conn-dot { background: #7fbf9a; }
+.conn-fail { color: #d9857c; }
+.conn-fail .conn-dot { background: #d9857c; }
+.conn-busy { color: var(--text-secondary); }
+.conn-ms { margin-left: auto; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.conn-sub { font-size: 12px; color: var(--text-muted); margin-top: var(--sp-2); line-height: 1.5; }
+.spinner { width: 13px; height: 13px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: conn-spin .7s linear infinite; flex: 0 0 13px; }
+@keyframes conn-spin { to { transform: rotate(360deg); } }
+.conn-models-title { font-size: 11px; color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
+.conn-models { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.conn-model-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-raised); color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn-model-chip:hover { border-color: var(--accent); color: var(--accent-text); }
+.conn-more { font-size: 11px; color: var(--text-muted); align-self: center; }
+
+/* ---- 设定范围条（规则书 / 世界书页顶部）---- */
+.scope-bar {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+}
+.scope-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.scope-label { font-size: 12px; color: var(--text-muted); flex: 0 0 auto; }
+.scope-select {
+  flex: 1 1 140px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--sp-2);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-btn, 8px);
+}
+.scope-select:focus { outline: none; border-color: var(--accent); }
+.scope-actions { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+.scope-note { margin: var(--sp-2) 0 0; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
+@media (max-width: 420px) {
+  .scope-actions { width: 100%; }
+  .scope-actions .sm-btn { flex: 1 1 auto; }
+}
+@media (min-width: 720px) {
+  .scope-select { flex: 0 0 260px; }
+  .scope-actions { margin-left: auto; }
+}
