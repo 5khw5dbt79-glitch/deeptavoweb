@@ -165,7 +165,10 @@ export function renderChat() {
 function autoGrow() {
   const ta = $('#composer-input');
   ta.style.height = 'auto';
-  ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+  // scrollHeight 在个别浏览器里会返回 0（尤其是刚清空时），兜一个最小行高，
+  // 否则 textarea 会被压成 0px，看起来像「输入框消失」
+  const next = Math.max(24, Math.min(ta.scrollHeight || 0, 120));
+  ta.style.height = `${next}px`;
 }
 
 /** 局部更新一条消息的正文（流式 / 切换版本都走这里，不整页重渲染） */
@@ -414,21 +417,64 @@ function updateSendButton() {
   }
 }
 
-/** iOS 软键盘：把可视高度差写进 CSS 变量，收起底部导航并让消息流回到底部 */
+/**
+ * 视口同步：以 visualViewport.height 作为 app 高度的唯一来源。
+ * 旧实现用「100dvh - 键盘高度」二次扣减，iOS 上 dvh 本身已经随键盘变化，
+ * 结果是输入区被压扁或跳动；现在只认可视高度，不再做减法。
+ */
+let viewportBaseline = 0;
+
+function isEditingField() {
+  const el = document.activeElement;
+  return !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT');
+}
+
+function syncViewport() {
+  const vv = window.visualViewport;
+  const height = Math.round(vv ? vv.height : window.innerHeight);
+  const offset = Math.round(vv?.offsetTop || 0);
+  document.documentElement.style.setProperty('--app-height', `${height}px`);
+
+  // 记录「没有键盘时的最大可见高度」，用来判断键盘是否弹起
+  if (!isEditingField() && offset === 0) viewportBaseline = Math.max(viewportBaseline, height);
+  const deficit = viewportBaseline - (height + offset);
+  const mobile = window.matchMedia('(max-width: 719px)').matches;
+  // 仅在「可视高度确实变小」时判定为键盘态；
+  // 不能只看焦点，否则收起键盘但焦点还在时会一直压着底栏
+  const open = mobile && (deficit > 80 || (isEditingField() && deficit > 20));
+
+  const wasOpen = document.body.classList.contains('kb-open');
+  document.body.classList.toggle('kb-open', open);
+  if (open && !wasOpen) {
+    requestAnimationFrame(() => {
+      scrollToBottom(true);
+      $('#composer')?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+}
+
 function bindVisualViewport() {
   const vv = window.visualViewport;
-  if (!vv) return;
-  const sync = () => {
-    const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    document.documentElement.style.setProperty('--kb-inset', `${Math.round(kb)}px`);
-    const open = kb > 120;
-    const wasOpen = document.body.classList.contains('kb-open');
-    document.body.classList.toggle('kb-open', open);
-    if (open && !wasOpen) requestAnimationFrame(() => scrollToBottom(true));
-  };
-  vv.addEventListener('resize', sync, { passive: true });
-  vv.addEventListener('scroll', sync, { passive: true });
-  sync();
+  if (vv) {
+    vv.addEventListener('resize', syncViewport, { passive: true });
+    vv.addEventListener('scroll', syncViewport, { passive: true });
+  }
+  window.addEventListener('resize', syncViewport, { passive: true });
+  window.addEventListener('orientationchange', () => {
+    viewportBaseline = 0;
+    setTimeout(syncViewport, 250);
+  });
+  // 输入框获得 / 失去焦点时，键盘高度可能滞后一两帧才更新
+  document.addEventListener('focusin', () => {
+    setTimeout(() => {
+      syncViewport();
+      // iOS 聚焦输入框时会把整个 visual viewport 上推，导致底部被截；
+      // 页面本身不滚动，复位一次即可，不影响输入框位置
+      if (document.body.classList.contains('kb-open')) window.scrollTo(0, 0);
+    }, 90);
+  });
+  document.addEventListener('focusout', () => setTimeout(syncViewport, 140));
+  syncViewport();
 }
 
 export function initChat() {

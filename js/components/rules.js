@@ -300,11 +300,18 @@ function renderAlerts() {
       </div>`);
   }
 
+  const missing = state.missingRecommendedRules();
   if (!enabledCount) {
     alerts.push(`
       <div class="rules-alert" role="status">
         <span class="rules-alert-text">规则片段一条都没生效，文风与节奏只能靠角色设定</span>
         <button class="secondary-btn sm-btn" data-action="load-recommended">载入推荐小说规则包</button>
+      </div>`);
+  } else if (missing > 0) {
+    alerts.push(`
+      <div class="rules-alert" role="status">
+        <span class="rules-alert-text">还有 ${missing} 条推荐规则未启用（共 ${storage.RECOMMENDED_RULE_IDS.length} 条）</span>
+        <button class="secondary-btn sm-btn" data-action="load-recommended">一键补齐</button>
       </div>`);
   }
 
@@ -446,15 +453,7 @@ async function handleImport(file) {
       });
       presetCount += 1;
     }
-    const scope = state.editingScope();
-    const existingIds = new Set(scope.rules.map(r => `${r.name}::${r.content}`));
-    let ruleCount = 0;
-    for (const rule of parsed.rules) {
-      if (existingIds.has(`${rule.name}::${rule.content}`)) continue;
-      scope.rules.push({ ...rule, id: `${rule.id}_${Date.now().toString(36)}_${ruleCount}`, builtin: false });
-      ruleCount += 1;
-    }
-    state.markConfigEdited();
+    const ruleCount = state.importRules(parsed.rules);
     renderRules();
     toast(`导入完成：${presetCount} 个预设、${ruleCount} 条规则`);
   } catch (err) {
@@ -675,9 +674,11 @@ export function initRules(confirmFn) {
         renderAlerts();
         break;
       case 'load-recommended': {
-        const count = state.enableRecommendedRules();
+        const r = state.enableRecommendedRules();
         renderRules();
-        toast(count ? `已启用 ${count} 条推荐规则` : '推荐规则已全部启用');
+        if (!r.missing && !r.added) toast('推荐规则已全部启用');
+        else if (r.added) toast(`已补回 ${r.added} 条推荐规则，并全部启用`);
+        else toast(`已启用 ${r.enabled} 条推荐规则`);
         break;
       }
       case 'new-rule':

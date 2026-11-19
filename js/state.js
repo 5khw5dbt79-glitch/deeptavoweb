@@ -386,24 +386,77 @@ export function setRulePosition(id, position, depth = null) {
   return rule;
 }
 
-/** 一键载入推荐规则包：把内置推荐片段补齐并启用（幂等） */
+/**
+ * 一键载入推荐规则包：补齐被删掉的内置片段并全部启用（幂等）。
+ * @returns {{added:number, enabled:number, total:number, missing:number}}
+ *   added   本次补回的条数；enabled 本次从停用变启用的条数；missing 执行前缺/未启用的条数
+ */
 export function enableRecommendedRules() {
   const scope = editingScope();
-  let turnedOn = 0;
+  const total = storage.RECOMMENDED_RULE_IDS.length;
+  const before = storage.RECOMMENDED_RULE_IDS.filter(id => {
+    const rule = scope.rules.find(r => r.id === id);
+    return !rule || !rule.enabled;
+  }).length;
+  let added = 0;
+  let enabled = 0;
   for (const id of storage.RECOMMENDED_RULE_IDS) {
     let rule = scope.rules.find(r => r.id === id);
     if (!rule) {
       const source = storage.BUILTIN_RULES.find(r => r.id === id);
       if (!source) continue;
-      rule = { ...source, boundCharacterIds: [...source.boundCharacterIds], enabled: true };
-      scope.rules.push(rule);
+      scope.rules.push({ ...source, boundCharacterIds: [...source.boundCharacterIds], enabled: true });
+      added += 1;
+      enabled += 1;
+      continue;
     }
-    if (!rule.enabled) turnedOn += 1;
-    rule.enabled = true;
+    if (!rule.enabled) {
+      rule.enabled = true;
+      enabled += 1;
+    }
   }
   markConfigEdited();
   commit('rules');
-  return turnedOn;
+  return { added, enabled, total, missing: before };
+}
+
+/** 推荐规则里还有几条没生效（用于提醒条与按钮文案） */
+export function missingRecommendedRules(characterId) {
+  const rules = scopeOf(characterId).rules || [];
+  return storage.RECOMMENDED_RULE_IDS.filter(id => {
+    const rule = rules.find(r => r.id === id);
+    return !rule || !rule.enabled;
+  }).length;
+}
+
+/**
+ * 批量导入规则片段（配置 JSON）。
+ * 必须走 commit：旧实现直接 push 到 scope.rules，刷新页面就丢了。
+ */
+export function importRules(list = []) {
+  const scope = editingScope();
+  const existing = new Set(scope.rules.map(r => `${r.name}::${r.content}`));
+  let added = 0;
+  for (const rule of list) {
+    if (!rule || typeof rule.content !== 'string') continue;
+    const key = `${rule.name}::${rule.content}`;
+    if (existing.has(key)) continue;
+    scope.rules.push({
+      ...rule,
+      id: uid('rule'),
+      name: String(rule.name || '导入的规则'),
+      content: String(rule.content),
+      builtin: false,
+      enabled: rule.enabled !== false,
+    });
+    existing.add(key);
+    added += 1;
+  }
+  if (added) {
+    markConfigEdited();
+    commit('rules');
+  }
+  return added;
 }
 
 /**

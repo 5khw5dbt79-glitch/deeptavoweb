@@ -95,7 +95,6 @@
 
   /* 键盘弹出：收起底部导航栏，把整页高度让给键盘 */
   body.kb-open .tabbar { display: none !important; }
-  body.kb-open .app-shell { height: calc(100dvh - var(--kb-inset, 0px)); }
   body.kb-open .composer-wrap { padding-bottom: var(--sp-2); }
   body.kb-open .scroll-bottom-btn { bottom: calc(88px + env(safe-area-inset-bottom)); }
 }

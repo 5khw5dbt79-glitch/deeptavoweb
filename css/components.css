@@ -75,7 +75,14 @@
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
   transition: border-color var(--dur-fast);
 }
-.composer:focus-within { border-color: var(--border-strong); }
+.composer:focus-within { border-color: rgba(224, 184, 114, .45); }
+/* 输入框自身不要再画一圈焦点环：外层 composer 已经有边框，
+   两层叠在 iOS / 微信里会显得像「双线 bug」 */
+.composer-input:focus,
+.composer-input:focus-visible { outline: none; }
+.form-input:focus-visible,
+.form-textarea:focus-visible,
+.form-select:focus-visible { outline: none; }
 .composer-input {
   flex: 1; min-height: 24px; max-height: 120px; resize: none; overflow-y: auto;
   line-height: 1.5; padding: var(--sp-1) 0; color: var(--text-primary); background: transparent;
@@ -641,3 +648,19 @@
   margin-top: var(--sp-4); padding: var(--sp-3) 0 var(--sp-1);
   background: linear-gradient(to top, var(--surface-raised) 72%, rgba(36, 36, 40, 0));
 }
+
+/* ---- 移动端：按钮文字不竖排、不被挤压 ---- */
+.primary-btn, .secondary-btn, .danger-btn, .sm-btn, .link-btn, .rp-key {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.page-header-actions { row-gap: var(--sp-2); }
+.wb-tabs { flex: 0 0 auto; min-height: 40px; overflow: hidden; }
+.wb-tab { white-space: nowrap; }
+.wb-head-actions { flex-wrap: nowrap; }
+
+/* 滚动页是纵向 flex 容器：子项不能被压缩，否则长内容会把 Tab / 头部挤扁 */
+.page-characters > *,
+.page-world > *,
+.page-settings > *,
+.page-rules > * { flex-shrink: 0; }
