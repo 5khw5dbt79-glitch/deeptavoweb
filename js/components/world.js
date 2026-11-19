@@ -2,6 +2,7 @@
 import { ICONS } from '../icons.js';
 import * as state from '../state.js';
 import { renderScopeBar } from './scope.js';
+import { processAvatarFile, isUsableAvatar, dataUrlBytes } from '../avatar.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -27,11 +28,14 @@ export function renderWorld() {
   // 主角卡片
   const pName = p.name?.trim() || '未设定主角';
   const pTitle = p.title?.trim();
-  const pFacts = [p.title, p.personality, p.background, p.relationship]
+  const hasAvatar = isUsableAvatar(p.avatar);
+  const pFacts = [p.title, p.personality, p.appearance, p.background, p.relationship]
     .map(v => v?.trim()).filter(Boolean);
   $('#protagonist-card').innerHTML = `
     <div class="profile-head">
-      <div class="profile-avatar" aria-hidden="true"><span class="icon">${ICONS.user}</span></div>
+      <div class="profile-avatar ${hasAvatar ? 'has-image' : ''}" aria-hidden="true">${hasAvatar
+        ? `<img src="${p.avatar}" alt="">`
+        : `<span class="icon">${ICONS.user}</span>`}</div>
       <div class="profile-info" style="min-width:0;flex:1">
         <div class="profile-name">${escapeHTML(pName)} ${p.enabled ? '<span class="rule-tag on">注入中</span>' : '<span class="rule-tag">未启用</span>'}</div>
         <div class="profile-sub">${pTitle ? escapeHTML(pTitle) : '设定你在故事中的身份，角色会据此称呼你'}</div>
@@ -124,6 +128,108 @@ export function openWorldModal(id = null) {
 
 export function closeWorldModal() { $('#world-modal').hidden = true; }
 
+// ---- 主角：本地头像 + 外貌标签 ----
+let avatarDraft = '';
+
+function renderAvatarPreview() {
+  const box = $('#protagonist-avatar-preview');
+  if (!box) return;
+  const note = $('#protagonist-avatar-note');
+  const removeBtn = $('#protagonist-avatar-remove');
+  const name = ($('#protagonist-name')?.value || '').trim();
+  if (isUsableAvatar(avatarDraft)) {
+    box.classList.add('has-image');
+    box.innerHTML = `<img src="${avatarDraft}" alt="主角头像预览">`;
+    if (removeBtn) removeBtn.hidden = false;
+    if (note) note.textContent = `已就绪 · ${(dataUrlBytes(avatarDraft) / 1024).toFixed(1)} KB · 仅存在本机`;
+  } else {
+    box.classList.remove('has-image');
+    box.innerHTML = `<span class="avatar-initial">${escapeHTML((name || '我').slice(0, 1))}</span>`;
+    if (removeBtn) removeBtn.hidden = true;
+    if (note) note.textContent = '在本机裁剪压缩成 240×240 WebP（≤25KB），只用于界面展示，不会发给模型。';
+  }
+}
+
+function allKnownTags() {
+  const preset = state.APPEARANCE_TAG_GROUPS.flatMap(g => g.tags);
+  return [...preset, ...(state.getState().appearanceTags || [])];
+}
+
+function currentAppearance() {
+  return ($('#protagonist-appearance')?.value || '');
+}
+
+function isTagOn(tag) {
+  return currentAppearance().includes(tag);
+}
+
+function tagChip(tag, removable = false) {
+  const on = isTagOn(tag);
+  return `<span class="tag-chip ${on ? 'on' : ''}" data-tag="${escapeHTML(tag)}" role="button" tabindex="0" aria-pressed="${on}">${escapeHTML(tag)}${removable
+    ? `<button type="button" class="tag-x" data-remove-tag="${escapeHTML(tag)}" aria-label="删除标签 ${escapeHTML(tag)}">×</button>` : ''}</span>`;
+}
+
+function updateTagCount() {
+  const el = $('#appearance-tag-count');
+  if (!el) return;
+  const active = allKnownTags().filter(isTagOn).length;
+  el.textContent = active ? `已选 ${active} 个` : '';
+}
+
+function renderTagGroups() {
+  const groups = $('#appearance-tag-groups');
+  if (!groups) return;
+  groups.innerHTML = state.APPEARANCE_TAG_GROUPS.map(g => `
+    <div class="tag-group">
+      <span class="tag-group-label">${g.label}</span>
+      <div class="tag-cloud">${g.tags.map(t => tagChip(t)).join('')}</div>
+    </div>`).join('');
+
+  const custom = state.getState().appearanceTags || [];
+  const customBox = $('#appearance-custom-tags');
+  customBox.innerHTML = custom.length ? `
+    <div class="tag-group">
+      <span class="tag-group-label">我的自定义标签</span>
+      <div class="tag-cloud">${custom.map(t => tagChip(t, true)).join('')}</div>
+    </div>` : '';
+  updateTagCount();
+}
+
+/**
+ * 点选标签：文本里没有就追加，有就移除。
+ * 采用「就地追加/删除」而不是整段重写，玩家手写的外貌细节不会被冲掉。
+ */
+function toggleTag(tag) {
+  const ta = $('#protagonist-appearance');
+  if (!ta) return;
+  let text = ta.value;
+  if (isTagOn(tag)) {
+    const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`[、，,；;\\s]*${escaped}`), '');
+    text = text.replace(/^[、，,；;\s]+/, '').replace(/[、，,；;\s]+$/, '');
+  } else {
+    const trimmed = text.trim();
+    text = trimmed ? `${trimmed.replace(/[。.\s]+$/, '')}，${tag}` : tag;
+  }
+  ta.value = text;
+  renderTagGroups();
+}
+
+function addCustomTagFromInput() {
+  const input = $('#appearance-tag-input');
+  if (!input) return;
+  const value = input.value.trim();
+  if (!value) return;
+  const existed = (state.getState().appearanceTags || []).includes(value);
+  state.addAppearanceTag(value);
+  input.value = '';
+  if (!existed && !isTagOn(value)) {
+    const ta = $('#protagonist-appearance');
+    if (ta) ta.value = ta.value.trim() ? `${ta.value.trim().replace(/[。.\s]+$/, '')}，${value}` : value;
+  }
+  renderTagGroups();
+}
+
 export function openProtagonistModal() {
   const p = state.viewScope().protagonist;
   $('#protagonist-enabled').checked = !!p.enabled;
@@ -134,6 +240,11 @@ export function openProtagonistModal() {
   $('#protagonist-background').value = p.background || '';
   $('#protagonist-relationship').value = p.relationship || '';
   $('#protagonist-notes').value = p.notes || '';
+  $('#protagonist-appearance').value = p.appearance || '';
+  avatarDraft = isUsableAvatar(p.avatar) ? p.avatar : '';
+  $('#appearance-tag-input').value = '';
+  renderAvatarPreview();
+  renderTagGroups();
   $('#protagonist-modal').hidden = false;
   setTimeout(() => $('#protagonist-name').focus(), 50);
 }
@@ -179,8 +290,68 @@ export function initWorld(confirmFn) {
       background: fd.get('background'),
       relationship: fd.get('relationship'),
       notes: fd.get('notes'),
+      appearance: fd.get('appearance'),
+      avatar: avatarDraft,
     });
     closeProtagonistModal();
+  });
+
+  // 头像：本地读取 → canvas 裁剪压缩（不经过网络）
+  const avatarInput = $('#protagonist-avatar-file');
+  avatarInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 允许连续选同一张
+    if (!file) return;
+    const note = $('#protagonist-avatar-note');
+    const box = $('#protagonist-avatar-preview');
+    box?.classList.add('is-loading');
+    if (note) note.textContent = '正在压缩…';
+    try {
+      const result = await processAvatarFile(file);
+      avatarDraft = result.dataUrl;
+      renderAvatarPreview();
+    } catch (err) {
+      if (note) note.textContent = err?.message || '头像处理失败，换一张试试';
+    } finally {
+      box?.classList.remove('is-loading');
+    }
+  });
+
+  // 标签：点选切换、自定义增删（事件委托，标签组会整体重渲染）
+  $('#protagonist-modal').addEventListener('click', (e) => {
+    const remove = e.target.closest('[data-remove-tag]');
+    if (remove) {
+      e.stopPropagation();
+      const tag = remove.dataset.removeTag;
+      if (isTagOn(tag)) toggleTag(tag);
+      state.removeAppearanceTag(tag);
+      renderTagGroups();
+      return;
+    }
+    const chip = e.target.closest('[data-tag]');
+    if (chip) {
+      toggleTag(chip.dataset.tag);
+      return;
+    }
+    if (e.target.closest('[data-action="remove-avatar"]')) {
+      avatarDraft = '';
+      renderAvatarPreview();
+      return;
+    }
+    if (e.target.closest('[data-action="add-appearance-tag"]')) {
+      addCustomTagFromInput();
+    }
+  });
+
+  $('#appearance-tag-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      addCustomTagFromInput();
+    }
+  });
+
+  $('#protagonist-name').addEventListener('input', () => {
+    if (!isUsableAvatar(avatarDraft)) renderAvatarPreview();
   });
 
   $('#memory-form').addEventListener('submit', (e) => {

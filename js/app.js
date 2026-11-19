@@ -8,6 +8,8 @@ import * as rules from './components/rules.js';
 import * as world from './components/world.js';
 import * as settings from './components/settings.js';
 import * as scope from './components/scope.js';
+import { initPreview } from './components/preview.js';
+import { isUsableAvatar } from './avatar.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -19,11 +21,14 @@ function renderSidebar() {
     nav.innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted)">还没有角色</div>';
     return;
   }
-  nav.innerHTML = s.characters.map(c => `
+  nav.innerHTML = s.characters.map(c => {
+    const hasImage = isUsableAvatar(c.avatar);
+    return `
     <button class="nav-item ${c.id === s.activeCharacterId ? 'active' : ''}" data-action="select-character" data-id="${c.id}">
-      <span class="avatar-dot" style="background:${c.color}"></span>
+      <span class="avatar-dot ${hasImage ? 'has-image' : ''}" style="background:${c.color}">${hasImage ? `<img src="${c.avatar}" alt="">` : ''}</span>
       <span class="nav-item-label">${escapeHTML(c.name)}</span>
-    </button>`).join('');
+    </button>`;
+  }).join('');
 }
 
 function escapeHTML(str = '') {
@@ -54,7 +59,12 @@ function closeConfirm() { $('#confirm-modal').hidden = true; confirmCallback = n
 // ---- 路由切换 ----
 function onRoute(page) {
   document.querySelectorAll('.page').forEach(el => {
-    el.classList.toggle('is-active', el.dataset.page === page);
+    const active = el.dataset.page === page;
+    el.classList.toggle('is-active', active);
+    // 非激活页面同时摘出无障碍树与键盘 Tab 序列，避免读屏串读与焦点穿透
+    el.setAttribute('aria-hidden', active ? 'false' : 'true');
+    if (active) el.removeAttribute('inert');
+    else el.setAttribute('inert', '');
   });
   document.querySelectorAll('.tab, .nav-item[data-route]').forEach(el => {
     el.classList.toggle('active', el.dataset.route === `#/${page}`);
@@ -81,6 +91,10 @@ document.addEventListener('click', (e) => {
   switch (action) {
     case 'send': chat.handleChatAction('send'); break;
     case 'scroll-bottom': chat.handleChatAction('scroll-bottom'); break;
+    case 'reroll': chat.handleChatAction('reroll', id); break;
+    case 'variant-prev': chat.handleChatAction('variant-prev', id); break;
+    case 'variant-next': chat.handleChatAction('variant-next', id); break;
+    case 'insert-pair': chat.handleChatAction('insert-pair', null, el); break;
     case 'goto-characters': router.navigate('characters'); break;
     case 'open-drawer': openDrawer(); break;
     case 'close-drawer': closeDrawer(); break;
@@ -93,12 +107,6 @@ document.addEventListener('click', (e) => {
     case 'chat-with': characters.handleCharacterAction(action, id); closeDrawer(); break;
     case 'select-character': state.selectCharacter(id); closeDrawer(); router.navigate('chat'); break;
     case 'close-modal': characters.closeCharacterModal(); break;
-    case 'select-preset': rules.handleRuleAction('select-preset', id); break;
-    case 'toggle-preset-menu': rules.handleRuleAction('toggle-preset-menu', id); break;
-    case 'edit-preset': rules.handleRuleAction('edit-preset', id); break;
-    case 'default-preset': rules.handleRuleAction('default-preset', id); break;
-    case 'delete-preset': rules.handleRuleAction('delete-preset', id, openConfirm); break;
-    case 'new-preset': rules.handleRuleAction('new-preset'); closeDrawer(); break;
     case 'new-world-entry': world.handleWorldAction('new-world-entry'); closeDrawer(); break;
     case 'edit-world-entry': world.handleWorldAction('edit-world-entry', id); break;
     case 'delete-world-entry': world.handleWorldAction('delete-world-entry', id, openConfirm); break;
@@ -107,9 +115,6 @@ document.addEventListener('click', (e) => {
     case 'close-protagonist-modal': world.closeProtagonistModal(); break;
     case 'edit-memory': world.handleWorldAction('edit-memory'); closeDrawer(); break;
     case 'close-memory-modal': world.closeMemoryModal(); break;
-    case 'new-rule': rules.handleRuleAction('new-rule'); closeDrawer(); break;
-    case 'edit-rule': rules.handleRuleAction('edit-rule', id); break;
-    case 'delete-rule': rules.handleRuleAction('delete-rule', id, openConfirm); break;
     case 'close-rule-modal': rules.closeRuleModal(); break;
     case 'close-confirm': closeConfirm(); break;
     case 'confirm-ok':
@@ -126,7 +131,6 @@ document.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#character-modal').hidden) characters.closeCharacterModal();
-  else if (!$('#preset-editor').hidden) rules.closePresetEditor();
   else if (!$('#world-modal').hidden) world.closeWorldModal();
   else if (!$('#protagonist-modal').hidden) world.closeProtagonistModal();
   else if (!$('#memory-modal').hidden) world.closeMemoryModal();
@@ -143,6 +147,7 @@ rules.initRules(openConfirm);
 world.initWorld(openConfirm);
 settings.initSettings(openConfirm);
 scope.initScope(openConfirm);
+initPreview();
 
 state.subscribe((_s, hint) => {
   // 'messages' 变化由 chat.js 做局部 DOM 更新，不整页重渲染（否则打断流式打字）
@@ -164,6 +169,8 @@ state.subscribe((_s, hint) => {
     rules.renderRules();
   } else if (['world', 'protagonist', 'memory'].includes(hint) && page === 'world') {
     world.renderWorld();
+  } else if (hint === 'settings' && page === 'chat') {
+    chat.refreshChatBackground();
   } else if (hint === 'usage' && page === 'settings') {
     settings.renderSettings();
   }

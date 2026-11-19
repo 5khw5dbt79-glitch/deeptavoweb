@@ -26,6 +26,14 @@ export const ICONS = {
   eyeOff: wrap('<path d="M9.9 4.2A10.7 10.7 0 0 1 12 4c6 0 10 6 10 6a17 17 0 0 1-2.2 3.2M6.6 6.6A17 17 0 0 0 2 10s4 6 10 6a10 10 0 0 0 4.4-1M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8"/>'),
   code: wrap('<path d="m8 8-4 4 4 4m8-8 4 4-4 4m-3-11-2 14"/>'),
   plugin: wrap('<path d="M9 3v3M15 3v3M7 6h10a2 2 0 0 1 2 2v3a3 3 0 0 0 0 6v1a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1a3 3 0 0 0 0-6V8a2 2 0 0 1 2-2z"/>'),
+  eye: wrap('<path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/>'),
+  upload: wrap('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>'),
+  copy: wrap('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
+  grip: wrap('<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'),
+  refresh: wrap('<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>'),
+  left: wrap('<path d="m15 18-6-6 6-6"/>'),
+  right: wrap('<path d="m9 18 6-6-6-6"/>'),
+  image: wrap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>'),
 };
 
 export function paintIcons(root = document) {

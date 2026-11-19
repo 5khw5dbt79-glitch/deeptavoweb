@@ -48,3 +48,54 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* 规则书页：窄于 1080 改为单栏 + Tab 切换 */
+@media (max-width: 1079px) {
+  .rules-workbench { grid-template-columns: minmax(0, 1fr); }
+  .wb-tabs {
+    display: flex; gap: 3px; width: 100%; max-width: 1240px; margin: 0 auto var(--sp-3);
+    padding: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  }
+  .wb-tab { flex: 1; height: 32px; border-radius: 7px; font-size: 13px; color: var(--text-secondary); transition: background var(--dur-fast), color var(--dur-fast); }
+  .wb-tab:hover { color: var(--text-primary); }
+  .wb-tab.is-active { background: var(--surface-hover); color: var(--text-primary); }
+  .rules-workbench[data-tab="presets"] .wb-col-rules { display: none; }
+  .rules-workbench[data-tab="rules"] .wb-col-presets { display: none; }
+}
+
+@media (max-width: 560px) {
+  .preview-root { padding: 0; align-items: flex-end; }
+  .preview-panel { width: 100%; max-height: 92vh; border-radius: var(--r-modal) var(--r-modal) 0 0; padding: var(--sp-4) var(--sp-4) var(--sp-3); }
+  .preview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page-header-rules { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
+  .page-header-actions { justify-content: flex-start; }
+  .wb-col { padding: var(--sp-4); }
+  .seq-hint { display: none; }
+}
+
+/* ---- iOS：安全区、软键盘与输入缩放 ---- */
+@supports (padding: env(safe-area-inset-top)) {
+  .chat-header { padding-top: env(safe-area-inset-top); height: calc(60px + env(safe-area-inset-top)); }
+  .sidebar { padding-top: calc(var(--sp-4) + env(safe-area-inset-top)); }
+}
+
+@media (max-width: 719px) {
+  .chat-header { height: calc(56px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+  .page-characters, .page-world, .page-settings, .page-rules {
+    padding-top: calc(var(--sp-6) + env(safe-area-inset-top));
+  }
+  /* iOS Safari 在字号 < 16px 的输入框聚焦时会自动放大页面 */
+  .composer-input, .form-input, .form-textarea, .form-select,
+  #appearance-tag-input, #preset-name-input, #preset-desc-input, #appearance-tag-input {
+    font-size: 16px;
+  }
+  .message-tools { opacity: 1; }
+  .composer-tools { gap: 5px; }
+  .rp-key { height: 30px; padding: 0 9px; font-size: 14px; }
+
+  /* 键盘弹出：收起底部导航栏，把整页高度让给键盘 */
+  body.kb-open .tabbar { display: none !important; }
+  body.kb-open .app-shell { height: calc(100dvh - var(--kb-inset, 0px)); }
+  body.kb-open .composer-wrap { padding-bottom: var(--sp-2); }
+  body.kb-open .scroll-bottom-btn { bottom: calc(88px + env(safe-area-inset-bottom)); }
+}

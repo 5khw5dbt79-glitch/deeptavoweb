@@ -174,18 +174,36 @@ function trimByBudget(text = '', limit = 0) {
   return result.length < clean.length ? `${result}\n\n（部分设定因字符预算已省略）` : result;
 }
 
+/** 规则片段按注入位置分好的三桶（字符串、数组或 {top,charAfter,depth} 都接受） */
+function joinRuleText(value) {  if (Array.isArray(value)) {
+    return value.map(item => (typeof item === 'string' ? item : item?.text || '')).filter(Boolean).join('\n\n');
+  }
+  return typeof value === 'string' ? value : '';
+}
+
+function rulesObject(rules) {
+  if (!rules) return { top: '', charAfter: '', depth: [] };
+  if (typeof rules === 'string') return { top: '', charAfter: rules, depth: [] };
+  return {
+    top: joinRuleText(rules.top),
+    charAfter: joinRuleText(rules.charAfter ?? rules.text),
+    depth: Array.isArray(rules.depth) ? rules.depth : [],
+  };
+}
+
 /**
- * 组装 system 提示词。
- * 顺序：全局前缀 → 角色设定 → 世界书（主角 / 长期记忆 / 触发条目）→ 规则书 → 全局后缀。
- * 世界书 + 规则书合计受 settings.promptCharLimit 约束（0 = 不限制）。
+ * 组装 system 提示词（未启用预设时使用）。
+ * 顺序：系统顶部规则 → 全局前缀 → 主提示词 → 角色设定 →（世界书 + 角色后规则，按预算裁剪）→ 全局后缀。
  */
-export function buildSystem(character, rulesText, settings, worldText = '', presetText = '') {
+export function buildSystem(character, rules, settings, worldText = '', presetText = '') {
+  const r = rulesObject(rules);
   const parts = [];
+  if (r.top.trim()) parts.push(r.top.trim());
   if (settings.systemPrefix?.trim()) parts.push(settings.systemPrefix.trim());
   // 对话预设相当于 APP 的 Main Prompt，置于角色定义之前决定整体叙事风格
   if (presetText?.trim()) parts.push(presetText.trim());
   parts.push(character.systemPrompt || '你是一个角色扮演助手，请以角色身份回应。');
-  const extra = [worldText, rulesText].filter(v => v?.trim()).map(v => v.trim()).join('\n\n');
+  const extra = [worldText, r.charAfter].filter(v => v?.trim()).map(v => v.trim()).join('\n\n');
   const trimmed = trimByBudget(extra, Math.max(0, Number(settings.promptCharLimit) || 0));
   if (trimmed) parts.push(trimmed);
   if (settings.systemSuffix?.trim()) parts.push(settings.systemSuffix.trim());
@@ -224,21 +242,66 @@ export function composePlanParts(plan, promptCharLimit = 0) {
   return out;
 }
 
-function buildMessages(character, history, userInput, contextLimit, rulesText, settings, worldText, presetText = '', plan = null) {
-  let recent = history.filter(m => m.status !== 'error' && m.content).slice(-Math.max(1, contextLimit));
+/** 把 depth 规则插进历史消息：depth 0 = 紧贴最新一条历史之后（越靠近最新回复约束越强） */
+function insertDepthRules(historyMessages = [], depthRules = []) {
+  const list = (depthRules || []).filter(r => String(r?.text || '').trim());
+  if (!list.length) return historyMessages;
+  const out = historyMessages.slice();
+  // depth 大的先插，保证多条规则同时落位时顺序稳定
+  const sorted = list.slice().sort((a, b) => (Number(b.depth) || 0) - (Number(a.depth) || 0));
+  for (const rule of sorted) {
+    const depth = Math.max(0, Math.min(Number(rule.depth) || 0, out.length));
+    out.splice(out.length - depth, 0, { role: 'system', content: String(rule.text).trim() });
+  }
+  return out;
+}
+
+/**
+ * 实际携带多少条历史消息。
+ * 优先用「轮数」（1 轮 = 用户 + 回复两条），0 时回落到旧的「消息条数」设置。
+ */
+export function historyLimit(settings = {}) {
+  const turns = Math.max(0, Number(settings.historyTurns) || 0);
+  if (turns > 0) return turns * 2;
+  return Math.max(1, Number(settings.contextLimit) || 20);
+}
+
+/**
+ * 发送前清洗：只影响发给 API 的文本，界面展示保留完整排版。
+ * 去掉多余空行、行尾空格与纯装饰性分隔线（--- / *** / ___）。
+ */
+export function sanitizeForApi(text = '') {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * 按预设块顺序组装完整请求消息。预览面板与实际请求共用这一份逻辑，
+ * 保证「预览到的」和「真正发出去的」一致。
+ */
+export function assembleMessages(character, history, userInput, contextLimit, rules, settings, worldText, presetText = '', plan = null) {
+  const limit = historyLimit(settings);
+  let recent = history.filter(m => m.status !== 'error' && m.content).slice(-limit);
   // 历史字符上限：超限时从最早的开始丢弃，至少保留最近一条
   const charLimit = Math.max(0, Number(settings.historyCharLimit) || 0);
   if (charLimit > 0) {
     const total = () => recent.reduce((n, m) => n + String(m.content || '').length, 0);
     while (recent.length > 1 && total() > charLimit) recent.shift();
   }
-  const historyMessages = recent.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  const historyMessages = recent
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: sanitizeForApi(m.content) }))
+    .filter(m => m.content);
 
-  // 未启用预设：走原有拼接（前缀 → 主提示词 → 角色 → 世界书+规则 → 后缀）
+  // 未启用预设：走原有拼接（系统顶部规则 → 前缀 → 主提示词 → 角色 → 世界书+角色后规则 → 后缀）
   if (!plan) {
-    const messages = [{ role: 'system', content: buildSystem(character, rulesText, settings, worldText, presetText) }];
-    messages.push(...historyMessages);
-    messages.push({ role: 'user', content: userInput });
+    const r = rulesObject(rules);
+    const messages = [{ role: 'system', content: buildSystem(character, r, settings, worldText, presetText) }];
+    messages.push(...insertDepthRules(historyMessages, r.depth));
+    messages.push({ role: 'user', content: sanitizeForApi(userInput) });
     return messages;
   }
 
@@ -247,9 +310,9 @@ function buildMessages(character, history, userInput, contextLimit, rulesText, s
   const systemText = composePlanParts(plan, settings.promptCharLimit).join('\n\n').trim();
   if (systemText) messages.push({ role: 'system', content: systemText });
   for (const ex of plan.examples || []) messages.push({ role: ex.role, content: ex.content });
-  if (plan.useHistory !== false) messages.push(...historyMessages);
+  if (plan.useHistory !== false) messages.push(...insertDepthRules(historyMessages, plan.depthRules));
   if (plan.postHistory?.trim()) messages.push({ role: 'system', content: plan.postHistory.trim() });
-  messages.push({ role: 'user', content: userInput });
+  messages.push({ role: 'user', content: sanitizeForApi(userInput) });
   return messages;
 }
 
@@ -264,7 +327,7 @@ function clamp(n, min, max, fallback) {
  * @param {object} opts
  * @param {object} opts.settings API 配置
  * @param {object} opts.character 当前角色
- * @param {string} opts.rulesText 已启用的规则书拼接文本
+ * @param {object|string} opts.rulesText 已启用的规则片段（{top,charAfter,depth}，或旧的拼接字符串）
  * @param {string} opts.worldText 世界书（主角 / 记忆 / 触发条目）拼接文本
  * @param {string} opts.presetText 当前启用的对话预设文本（已展开宏）
  * @param {object} opts.plan 由 state.buildPresetPlan 生成的结构化提示词计划（启用预设时）
@@ -283,8 +346,8 @@ export async function streamChat({ settings, character, rulesText = '', worldTex
   const stream = settings.stream !== false;
   const body = {
     model: (settings.model || 'deepseek-chat').trim(),
-    messages: buildMessages(character, history, userInput, settings.contextLimit || 20, rulesText, settings, worldText, presetText, plan),
-    temperature: clamp(settings.temperature, 0, 5, 1.2),
+    messages: assembleMessages(character, history, userInput, settings.contextLimit || 20, rulesText, settings, worldText, presetText, plan),
+    temperature: clamp(settings.temperature, 0, 5, 1.05),
     top_p: clamp(settings.topP ?? 1, 0, 1, 1),
     stream,
   };
@@ -379,4 +442,68 @@ export async function streamChat({ settings, character, rulesText = '', worldTex
 
   if (!full.trim()) throw new APIError('模型未返回内容（可能被服务端内容策略拦截）', 'content_filter');
   return full;
+}
+
+/**
+ * 早期剧情归档：把最旧的若干轮对话压成结构化状态快照。
+ * 独立的一次低温（0.2）非流式请求，只带「旧记忆 + 待压缩对话」，不携带完整人设。
+ * @returns {Promise<{text:string, usage:object|null}>}
+ */
+export async function summarizeHistory({ settings, memory = '', messages = [], signal = null }) {
+  if (!settings.apiKey?.trim()) throw new APIError('尚未配置 API Key，无法归档早期剧情', 'no_key');
+  const transcript = messages
+    .map(m => `${m.role === 'user' ? '用户' : '角色'}：${sanitizeForApi(m.content)}`)
+    .filter(line => line.length > 3)
+    .join('\n');
+  if (!transcript.trim()) throw new APIError('没有可归档的内容', 'empty');
+
+  const system = `你是一个互动小说剧情档案员。请将早期对话压缩为 200 字以内的结构化状态快照（结合旧长期记忆合并更新），严格按以下格式输出，不要任何开场白：
+- 当前时空：[时间 + 地点 + 环境]
+- 物理与衣着：[角色与用户当前衣着状态、物理距离、携带物品]
+- 关系与情绪张力：[亲密度变化与暗涌情绪]
+- 核心事件线：[2~3 个短句概括关键行动]
+- 未解伏笔与约定：[尚未解决的冲突或线索]`;
+
+  const user = `【旧长期记忆】\n${String(memory || '').trim() || '（无）'}\n\n【需要归档的早期对话】\n${transcript}`;
+
+  const body = {
+    model: (settings.model || 'deepseek-chat').trim(),
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    temperature: 0.2,
+    max_tokens: 700,
+    stream: false,
+  };
+
+  let response;
+  try {
+    response = await fetch(endpoint(settings), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.apiKey.trim()}`,
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    throw new APIError('归档请求失败，请检查网络', 'network');
+  }
+
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json())?.error?.message || ''; } catch (_) {}
+    if (response.status === 401) throw new APIError('API Key 无效，归档失败', 'auth');
+    if (response.status === 402 || response.status === 429) throw new APIError(detail || '余额不足或限流，归档失败', 'quota');
+    throw new APIError(detail || `归档请求失败（HTTP ${response.status}）`, 'http');
+  }
+
+  let data;
+  try { data = await response.json(); } catch (_) { throw new APIError('归档响应解析失败', 'stream'); }
+  const text = data?.choices?.[0]?.message?.content;
+  if (typeof text !== 'string' || !text.trim()) throw new APIError('归档未返回内容', 'empty');
+  return { text: text.trim(), usage: normalizeUsage(data?.usage) };
 }

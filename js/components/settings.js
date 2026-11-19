@@ -1,18 +1,18 @@
 // settings.js — 设置页
 import * as state from '../state.js';
 import * as storage from '../storage.js';
-import { buildSystem, estimateTokens, testConnection, composePlanParts } from '../api.js';
+import { buildSystem, estimateTokens, testConnection, composePlanParts, historyLimit } from '../api.js';
 
 const $ = (sel) => document.querySelector(sel);
 
 /** 用量预设：省流 / 均衡 / 完整。只改与输入 token 直接相关的参数。 */
 const PRESETS = {
-  economy: { label: '省流', contextLimit: 8, historyCharLimit: 1200, worldEntryLimit: 1, promptCharLimit: 1200, maxTokens: 1024 },
-  balanced: { label: '均衡', contextLimit: 20, historyCharLimit: 4000, worldEntryLimit: 3, promptCharLimit: 4000, maxTokens: 0 },
-  full: { label: '完整', contextLimit: 100, historyCharLimit: 0, worldEntryLimit: 0, promptCharLimit: 0, maxTokens: 0 },
+  economy: { label: '省流', historyTurns: 6, contextLimit: 8, historyCharLimit: 1200, worldEntryLimit: 1, promptCharLimit: 1200, maxTokens: 1024 },
+  balanced: { label: '均衡', historyTurns: 30, contextLimit: 20, historyCharLimit: 4000, worldEntryLimit: 3, promptCharLimit: 4000, maxTokens: 0 },
+  full: { label: '完整', historyTurns: 0, contextLimit: 100, historyCharLimit: 0, worldEntryLimit: 0, promptCharLimit: 0, maxTokens: 0 },
 };
 
-const BUDGET_KEYS = ['contextLimit', 'historyCharLimit', 'worldEntryLimit', 'promptCharLimit', 'maxTokens'];
+const BUDGET_KEYS = ['historyTurns', 'contextLimit', 'historyCharLimit', 'worldEntryLimit', 'promptCharLimit', 'maxTokens'];
 
 function clampInt(raw, min, max, fallback) {
   const n = Number(raw);
@@ -39,24 +39,29 @@ function updateEstimate() {
   const s = state.getState();
   const settings = s.settings;
   const char = state.activeCharacter() || { systemPrompt: '' };
+  const buckets = state.activeRuleBuckets(char.id);
   const world = state.activeWorldText(state.activeMessages(), '', settings.worldEntryLimit, char.id).text;
   const plan = state.buildPresetPlan(char, state.activeMessages(), '', settings);
   const sys = plan
     ? composePlanParts(plan, settings.promptCharLimit).join('\n\n')
-    : buildSystem(char, state.activeRulesText(char.id), settings, world, state.activePresetText(char));
+    : buildSystem(char, buckets, settings, world, state.activePresetText(char));
+  // 历史底部的规则是以独立 system 消息注入的，也要算进设定开销
+  const depthRules = plan ? (plan.depthRules || []) : (buckets.depth || []);
+  const depthText = depthRules.map(r => r.text).join('\n');
 
   let recent = state.activeMessages().filter(m => m.status !== 'error' && m.content)
-    .slice(-Math.max(1, settings.contextLimit || 20));
+    .slice(-historyLimit(settings));
   const charLimit = Math.max(0, Number(settings.historyCharLimit) || 0);
   if (charLimit > 0) {
     const total = () => recent.reduce((n, m) => n + String(m.content || '').length, 0);
     while (recent.length > 1 && total() > charLimit) recent.shift();
   }
   const histChars = recent.reduce((n, m) => n + String(m.content || '').length, 0);
-  const sysTokens = estimateTokens(sys);
+  const sysChars = sys.length + depthText.length;
+  const sysTokens = estimateTokens(sys) + estimateTokens(depthText);
   const histTokens = estimateTokens(recent.map(m => m.content).join('\n'));
   $('#usage-estimate').textContent =
-    `当前配置：设定约 ${sys.length} 字符 / ≈${sysTokens} tokens · 历史约 ${histChars} 字符 / ≈${histTokens} tokens（不含本次输入）。这是本地粗估，实际扣费以 API 返回的 usage 为准。`;
+    `当前配置：设定约 ${sysChars} 字符 / ≈${sysTokens} tokens · 历史约 ${histChars} 字符 / ≈${histTokens} tokens（不含本次输入）。这是本地粗估，实际扣费以 API 返回的 usage 为准。`;
 }
 
 /** 展示 API 返回的真实用量 */
@@ -167,13 +172,16 @@ export function renderSettings() {
   $('#setting-apikey').value = s.apiKey;
   $('#setting-model').value = s.model;
   $('#setting-temp').value = s.temperature;
-  $('#temp-value').textContent = Number(s.temperature).toFixed(1);
+  $('#temp-value').textContent = Number(s.temperature).toFixed(2);
   $('#setting-topp').value = s.topP ?? 1;
   $('#topp-value').textContent = Number(s.topP ?? 1).toFixed(2);
   $('#setting-maxtokens').value = s.maxTokens || '';
+  $('#setting-history-turns').value = s.historyTurns ?? 30;
+  $('#setting-auto-summary').checked = s.autoSummary !== false;
   $('#setting-context').value = s.contextLimit;
   $('#context-value').textContent = s.contextLimit;
   $('#setting-stream').checked = s.stream !== false;
+  $('#setting-chat-bg').checked = s.chatBackground !== false;
   $('#setting-include-usage').checked = s.includeUsage !== false;
   $('#setting-prefix').value = s.systemPrefix || '';
   $('#setting-suffix').value = s.systemSuffix || '';
@@ -199,7 +207,7 @@ function applyPreset(name) {
 }
 
 export function initSettings(confirmFn) {
-  $('#setting-temp').addEventListener('input', (e) => { $('#temp-value').textContent = Number(e.target.value).toFixed(1); });
+  $('#setting-temp').addEventListener('input', (e) => { $('#temp-value').textContent = Number(e.target.value).toFixed(2); });
   $('#setting-topp').addEventListener('input', (e) => { $('#topp-value').textContent = Number(e.target.value).toFixed(2); });
   $('#setting-context').addEventListener('input', (e) => { $('#context-value').textContent = e.target.value; });
 
@@ -209,9 +217,11 @@ export function initSettings(confirmFn) {
     const temp = Math.min(5, Math.max(0, Number(fd.get('temperature')) || 0));
     const topP = Math.min(1, Math.max(0, Number(fd.get('topP')) || 0));
     const context = clampInt(fd.get('contextLimit'), 1, 500, 20);
+    const historyTurns = clampInt(fd.get('historyTurns'), 0, 200, 30);
     const maxTokensRaw = Number(fd.get('maxTokens'));
     const maxTokens = Number.isFinite(maxTokensRaw) && maxTokensRaw > 0 ? Math.min(32000, Math.floor(maxTokensRaw)) : 0;
     const budget = {
+      historyTurns,
       contextLimit: context,
       historyCharLimit: clampInt(fd.get('historyCharLimit'), 0, 200000, 0),
       worldEntryLimit: clampInt(fd.get('worldEntryLimit'), 0, 50, 0),
@@ -225,8 +235,11 @@ export function initSettings(confirmFn) {
       temperature: temp,
       topP,
       maxTokens,
+      historyTurns,
       contextLimit: context,
+      autoSummary: fd.get('autoSummary') === 'on',
       stream: fd.get('stream') === 'on',
+      chatBackground: fd.get('chatBackground') === 'on',
       includeUsage: fd.get('includeUsage') === 'on',
       systemPrefix: (fd.get('systemPrefix') || '').trim(),
       systemSuffix: (fd.get('systemSuffix') || '').trim(),
@@ -235,6 +248,30 @@ export function initSettings(confirmFn) {
     });
     renderSettings();
     note('设置已保存');
+  });
+
+  // 导入整库备份：解析 → 确认 → 覆盖运行时状态
+  const backupInput = $('#backup-file');
+  backupInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const next = storage.parseBackupFile(JSON.parse(text));
+      confirmFn?.(
+        '导入备份',
+        `将用这份备份替换当前全部数据（${next.characters.length} 个角色、${next.presets.length} 套预设、${next.rules.length} 条规则）。当前内容不会保留，建议先导出。`,
+        () => {
+          state.applyBackup(next);
+          renderSettings();
+          note('备份已导入');
+        },
+        '覆盖导入'
+      );
+    } catch (err) {
+      note(err?.message || '备份文件读取失败');
+    }
   });
 
   document.addEventListener('click', (e) => {
@@ -258,6 +295,8 @@ export function initSettings(confirmFn) {
         renderTokenStats();
         note('统计已清零');
       }, '清零');
+    } else if (action === 'import-data') {
+      $('#backup-file').click();
     } else if (action === 'clear-data') {
       confirmFn('清空所有数据', '这将删除全部角色、规则书、世界书、对话记录和设置，且无法恢复。建议先导出备份。', () => {
         storage.clear();

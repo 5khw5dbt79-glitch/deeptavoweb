@@ -1,6 +1,6 @@
 // state.js — 全局状态、订阅与业务操作
 import * as storage from './storage.js';
-export { PRESET_BLOCK_DEFS } from './storage.js';
+export { PRESET_BLOCK_DEFS, RULE_POSITIONS, RECOMMENDED_RULE_IDS, positionMeta, positionLabel, isMarkerBlock, APPEARANCE_TAG_GROUPS, MAX_CUSTOM_TAGS } from './storage.js';
 
 let state = storage.load();
 const listeners = new Set();
@@ -140,6 +140,7 @@ export function addCharacter(data) {
     systemPrompt: (data.systemPrompt || '').trim() || '你是一个角色扮演助手，请以角色身份回应。',
     greeting: (data.greeting || '').trim(),
     color: data.color || COLORS[0],
+    avatar: String(data.avatar || ''),
     createdAt: now,
     updatedAt: now,
   };
@@ -169,6 +170,8 @@ export function updateCharacter(id, data) {
     systemPrompt: (data.systemPrompt || '').trim() || char.systemPrompt,
     greeting: (data.greeting || '').trim(),
     color: data.color || char.color,
+    // 只有显式传入 avatar 才覆盖，避免老表单把图片清掉
+    ...('avatar' in data ? { avatar: String(data.avatar || '') } : {}),
     updatedAt: now,
   });
   commit('characters');
@@ -216,12 +219,109 @@ export function patchMessage(characterId, messageId, patch) {
   commit('messages');
 }
 
+/**
+ * 追加一个候选版本（Reroll）并切到它。
+ * content 始终等于当前选中的版本，其他模块不需要感知 variants 的存在。
+ */
+export function addMessageVariant(characterId, messageId, text) {
+  const msgs = state.conversations[characterId] || [];
+  const msg = msgs.find(m => m.id === messageId);
+  if (!msg) return null;
+  const clean = String(text || '');
+  const variants = Array.isArray(msg.variants) ? msg.variants.slice() : [];
+  // 首次生成时 content 已经是完整文本，先把它作为第 1 版，避免重复入列
+  if (!variants.length && msg.content) variants.push(msg.content);
+  if (clean && variants[variants.length - 1] !== clean) variants.push(clean);
+  msg.variants = variants.length ? variants : [clean];
+  msg.variantIndex = msg.variants.length - 1;
+  msg.content = clean;
+  msg.status = 'done';
+  commit('messages');
+  return msg;
+}
+
+/** 在多个版本之间切换（content 同步更新，历史记录读到的就是选中版本） */
+export function setMessageVariant(characterId, messageId, index) {
+  const msgs = state.conversations[characterId] || [];
+  const msg = msgs.find(m => m.id === messageId);
+  if (!msg?.variants?.length) return null;
+  const next = Math.max(0, Math.min(Number(index) || 0, msg.variants.length - 1));
+  msg.variantIndex = next;
+  msg.content = msg.variants[next];
+  commit('messages');
+  return msg;
+}
+
+/** 取某条消息之前的历史快照（Reroll 用：不包含这条回复本身） */
+export function historyBefore(characterId, messageId) {
+  const msgs = state.conversations[characterId] || [];
+  const idx = msgs.findIndex(m => m.id === messageId);
+  return idx < 0 ? msgs.slice() : msgs.slice(0, idx);
+}
+
+/** 删除某条消息（Reroll 前的用户输入需要重新发送时用） */
+export function removeMessage(characterId, messageId) {
+  const msgs = state.conversations[characterId] || [];
+  state.conversations[characterId] = msgs.filter(m => m.id !== messageId);
+  commit('messages');
+}
+
+/** 批量剔除最早的若干条消息（自动摘要归档后使用） */
+export function dropMessages(characterId, count) {
+  const msgs = state.conversations[characterId] || [];
+  const n = Math.max(0, Math.min(Number(count) || 0, msgs.length));
+  state.conversations[characterId] = msgs.slice(n);
+  commit('messages');
+}
+
 export function updateSettings(patch) {
   Object.assign(state.settings, patch);
   commit('settings');
 }
 
+// ---- 配置改动计数（用于「该备份了」的轻提示）----
+export function markConfigEdited() {
+  if (!state.meta) state.meta = storage.defaultMeta();
+  state.meta.edits = (Number(state.meta.edits) || 0) + 1;
+}
+
+/** 自上次导出以来改了几次规则 / 预设 */
+export function configEditCount() {
+  return Math.max(0, Number(state.meta?.edits) || 0);
+}
+
+export function markConfigExported() {
+  if (!state.meta) state.meta = storage.defaultMeta();
+  state.meta.edits = 0;
+  state.meta.exportedAt = Date.now();
+  commit('meta');
+}
+
 // ---- 规则书（可复用的 system 提示词片段）----
+/**
+ * 规则片段字段：
+ * position           注入位置（after_char_desc / before_main_prompt / chat_history_bottom）
+ * depth              位置为 chat_history_bottom 时，从最新一条历史往回数第几条
+ * scope              global = 全局生效；character = 仅 boundCharacterIds 中的角色
+ * boundCharacterIds  作用域为 character 时生效的角色
+ */
+function normalizeRuleInput(data, fallback = {}) {
+  const position = storage.RULE_POSITIONS.some(p => p.key === data.position)
+    ? data.position
+    : (fallback.position || 'after_char_desc');
+  const bound = Array.isArray(data.boundCharacterIds)
+    ? data.boundCharacterIds.map(String).filter(Boolean)
+    : (fallback.boundCharacterIds || []);
+  const wantsCharacterScope = data.scope === 'character';
+  return {
+    position,
+    depth: Math.max(0, Math.min(20, Number(data.depth ?? fallback.depth) || 0)),
+    // 选择了「仅指定角色」却没选人时，回落为全局，避免规则静默失效
+    scope: wantsCharacterScope && bound.length ? 'character' : 'global',
+    boundCharacterIds: bound,
+  };
+}
+
 export function addRule(data) {
   const now = Date.now();
   const rule = {
@@ -229,11 +329,13 @@ export function addRule(data) {
     name: (data.name || '').trim() || '未命名规则',
     content: (data.content || '').trim(),
     builtin: false,
-    enabled: !!data.enabled,
+    enabled: data.enabled === undefined ? true : !!data.enabled,
     createdAt: now,
     updatedAt: now,
+    ...normalizeRuleInput(data, { position: 'after_char_desc', depth: 0, boundCharacterIds: [] }),
   };
   editingScope().rules.push(rule);
+  markConfigEdited();
   commit('rules');
   return rule;
 }
@@ -246,7 +348,9 @@ export function updateRule(id, data) {
     content: (data.content ?? rule.content).trim(),
     enabled: typeof data.enabled === 'boolean' ? data.enabled : rule.enabled,
     updatedAt: Date.now(),
+    ...normalizeRuleInput(data, rule),
   });
+  markConfigEdited();
   commit('rules');
   return rule;
 }
@@ -254,6 +358,7 @@ export function updateRule(id, data) {
 export function deleteRule(id) {
   const scope = editingScope();
   scope.rules = scope.rules.filter(r => r.id !== id);
+  markConfigEdited();
   commit('rules');
 }
 
@@ -262,16 +367,75 @@ export function toggleRule(id) {
   if (!rule) return;
   rule.enabled = !rule.enabled;
   rule.updatedAt = Date.now();
+  markConfigEdited();
   commit('rules');
 }
 
+/** 只改注入位置（拖拽落槽时用），不触发内容覆盖 */
+export function setRulePosition(id, position, depth = null) {
+  const rule = editingScope().rules.find(r => r.id === id);
+  if (!rule) return null;
+  if (!storage.RULE_POSITIONS.some(p => p.key === position)) return rule;
+  rule.position = position;
+  if (depth !== null) rule.depth = Math.max(0, Math.min(20, Number(depth) || 0));
+  if (position === 'chat_history_bottom' && depth === null) rule.depth = 0;
+  rule.enabled = true;
+  rule.updatedAt = Date.now();
+  markConfigEdited();
+  commit('rules');
+  return rule;
+}
+
+/** 一键载入推荐规则包：把内置推荐片段补齐并启用（幂等） */
+export function enableRecommendedRules() {
+  const scope = editingScope();
+  let turnedOn = 0;
+  for (const id of storage.RECOMMENDED_RULE_IDS) {
+    let rule = scope.rules.find(r => r.id === id);
+    if (!rule) {
+      const source = storage.BUILTIN_RULES.find(r => r.id === id);
+      if (!source) continue;
+      rule = { ...source, boundCharacterIds: [...source.boundCharacterIds], enabled: true };
+      scope.rules.push(rule);
+    }
+    if (!rule.enabled) turnedOn += 1;
+    rule.enabled = true;
+  }
+  markConfigEdited();
+  commit('rules');
+  return turnedOn;
+}
+
 /**
- * 拼接所有已启用规则书，用空行分隔，作为 system 提示词的一部分。
- * 注入时始终用「当前对话角色」的设定，不看页面上的编辑范围。
+ * 按注入位置把「已启用且对当前角色生效」的规则分桶。
+ * 作用域过滤在这一层完成，注入端不必再判断。
  */
+export function activeRuleBuckets(characterId = state.activeCharacterId) {
+  const buckets = { top: [], charAfter: [], depth: [] };
+  for (const rule of scopeOf(characterId).rules || []) {
+    if (!rule.enabled) continue;
+    const text = String(rule.content || '').trim();
+    if (!text) continue;
+    if (rule.scope === 'character' && rule.boundCharacterIds?.length
+      && !rule.boundCharacterIds.includes(characterId)) continue;
+    const item = {
+      id: rule.id,
+      name: rule.name,
+      text,
+      position: rule.position || 'after_char_desc',
+      depth: Math.max(0, Number(rule.depth) || 0),
+    };
+    if (item.position === 'before_main_prompt') buckets.top.push(item);
+    else if (item.position === 'chat_history_bottom') buckets.depth.push(item);
+    else buckets.charAfter.push(item);
+  }
+  return buckets;
+}
+
+/** 兼容旧调用：系统提示词内的规则文本（不含历史底部那部分） */
 export function activeRulesText(characterId = state.activeCharacterId) {
-  const scope = scopeOf(characterId);
-  return scope.rules.filter(r => r.enabled && r.content.trim()).map(r => r.content.trim()).join('\n\n');
+  const b = activeRuleBuckets(characterId);
+  return [...b.top, ...b.charAfter].map(r => r.text).join('\n\n');
 }
 
 // ---- 对话预设（APP 风格：一次启用一个预设，预设内是 ordered 提示词块）----
@@ -302,24 +466,28 @@ export function activePresetText(character = null) {
   return text.trim() ? expandMacros(text, character) : '';
 }
 
+function normalizeBlockList(blocks, mainPrompt) {
+  return storage.normalizePresetBlocks(Array.isArray(blocks) ? blocks : [], mainPrompt).map(b => {
+    if (b.marker) return b;
+    return { ...b, enabled: b.enabled !== false, content: String(b.content || '') };
+  });
+}
+
 export function addPreset(data) {
+  const mainPrompt = String(data.mainPrompt || '');
   const preset = {
     id: uid('preset'),
     name: (data.name || '').trim() || '未命名预设',
     description: (data.description || '').trim(),
-    mainPrompt: String(data.mainPrompt || ''),
-    blocks: (data.blocks || []).map(b => ({
-      key: b.key,
-      enabled: b.enabled !== false,
-      content: String(b.content || ''),
-      ...(b.custom ? { label: b.label || b.key, custom: true } : {}),
-    })),
+    mainPrompt,
+    blocks: normalizeBlockList(data.blocks, mainPrompt),
     builtin: false,
     isDefault: false,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
   state.presets.push(preset);
+  markConfigEdited();
   commit('presets');
   return preset;
 }
@@ -331,16 +499,35 @@ export function updatePreset(id, data) {
   if ('description' in data) preset.description = String(data.description || '').trim();
   if ('mainPrompt' in data) preset.mainPrompt = String(data.mainPrompt || '');
   if (Array.isArray(data.blocks)) {
-    preset.blocks = data.blocks.map(b => ({
-      key: b.key,
-      enabled: b.enabled !== false,
-      content: String(b.content || ''),
-      ...(b.custom ? { label: b.label || b.key, custom: true } : {}),
-    }));
+    preset.blocks = normalizeBlockList(data.blocks, preset.mainPrompt);
   }
   preset.updatedAt = Date.now();
+  markConfigEdited();
   commit('presets');
   return preset;
+}
+
+/** 复制一份预设：内置预设也能复制成可自由改的版本 */
+export function duplicatePreset(id) {
+  const preset = state.presets.find(p => p.id === id);
+  if (!preset) return null;
+  return addPreset({
+    name: `${preset.name} 副本`,
+    description: preset.description,
+    mainPrompt: preset.mainPrompt,
+    blocks: JSON.parse(JSON.stringify(preset.blocks)),
+  });
+}
+
+/** 从导入结果新建预设（不覆盖已有的同名预设） */
+export function importPreset(parsed) {
+  const exists = state.presets.some(p => p.name === parsed.name);
+  return addPreset({
+    name: exists ? `${parsed.name}（导入）` : parsed.name,
+    description: parsed.description,
+    mainPrompt: parsed.mainPrompt,
+    blocks: parsed.blocks,
+  });
 }
 
 export function deletePreset(id) {
@@ -352,6 +539,7 @@ export function deletePreset(id) {
     const next = state.presets.find(p => p.builtin) || state.presets[0];
     if (next) next.isDefault = true;
   }
+  markConfigEdited();
   commit('presets');
   return true;
 }
@@ -359,52 +547,100 @@ export function deletePreset(id) {
 export function setDefaultPreset(id) {
   if (!state.presets.some(p => p.id === id)) return;
   state.presets.forEach(p => { p.isDefault = p.id === id; });
+  markConfigEdited();
   commit('presets');
 }
 
-/** 把 Chat Examples 文本解析为 few-shot 消息 */
-function parseExamples(text = '') {
+/**
+ * 把 Chat Examples 文本解析为 few-shot 消息
+ * 支持「user: xxx / char: xxx」逐行写法，其余行并入上一条。
+ */
+function parseExamples(text = '', character = null) {
   const out = [];
   for (const raw of String(text).split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
     const u = line.match(/^(?:user|用户|\{\{user\}\})\s*[:：]\s*(.*)$/i);
     const a = line.match(/^(?:assistant|char|角色|\{\{char\}\})\s*[:：]\s*(.*)$/i);
-    if (u) out.push({ role: 'user', content: expandMacros(u[1]) });
-    else if (a) out.push({ role: 'assistant', content: expandMacros(a[1]) });
+    if (u) out.push({ role: 'user', content: expandMacros(u[1], character) });
+    else if (a) out.push({ role: 'assistant', content: expandMacros(a[1], character) });
     else if (out.length) out[out.length - 1].content += '\n' + line;
-    else out.push({ role: 'assistant', content: expandMacros(line) });
+    else out.push({ role: 'assistant', content: expandMacros(line, character) });
   }
   return out;
 }
 
+/** 在 seq 里找到「角色设定」的位置，规则片段默认贴在它后面 */
+function charAnchorIndex(seq) {
+  let idx = -1;
+  seq.forEach((part, i) => {
+    if (part.key === 'charPersonality' || part.key === 'charDescription') idx = i;
+  });
+  if (idx >= 0) return idx;
+  const mainIdx = seq.findIndex(p => p.key === 'main');
+  if (mainIdx >= 0) return mainIdx;
+  return seq.length ? seq.length - 1 : -1;
+}
+
+/** 在 seq 里找到主提示词的位置，顶部规则插在它前面 */
+function mainIndex(seq) {
+  const idx = seq.findIndex(p => p.key === 'main');
+  return idx >= 0 ? idx : (seq[0]?.key === 'prefix' ? 1 : 0);
+}
+
+const ruleParts = (list) => list.map(r => ({ key: `rule_${r.id}`, text: r.text, budgeted: true, ruleId: r.id }));
+
 /**
- * 按当前预设的块顺序生成结构化提示词计划。
- * 未启用预设时返回 null，api.js 走原有拼接逻辑。
+ * 按指定预设生成结构化提示词计划。
+ *
+ * 规则片段的落点由两件事共同决定：
+ * 1. 预设序列里是否有 rulesDefault / rulesDepth 槽位 —— 有就落在槽位处；
+ * 2. 规则自身的 injectionPosition —— 决定它进哪个槽（角色后 / 主提示词顶部 / 历史底部）。
+ * 历史底部的规则是消息级注入（独立 system 消息），其余进系统提示词。
+ *
+ * @returns {object|null} 没有预设时返回 null（调用方走旧拼接逻辑）
  */
-export function buildPresetPlan(character = null, history = [], userInput = '', settings = {}) {
-  const preset = activePreset();
+export function buildPresetPlanFor(preset, character = null, history = [], userInput = '', settings = state.settings) {
   if (!preset) return null;
+  const charId = character?.id || state.activeCharacterId;
+  const world = activeWorldParts(history, userInput, settings.worldEntryLimit, charId);
+  const buckets = activeRuleBuckets(charId);
   const blocks = Array.isArray(preset.blocks) ? preset.blocks : [];
-  const parts = [];
+
+  const seq = [];
   const push = (key, text, budgeted = false) => {
     const clean = String(text || '').trim();
-    if (clean) parts.push({ key, text: clean, budgeted });
+    if (clean) seq.push({ key, text: clean, budgeted });
   };
 
-  // 全局前缀始终在最前
   push('prefix', settings.systemPrefix);
-  const world = activeWorldParts(history, userInput, settings.worldEntryLimit, character?.id || state.activeCharacterId);
+
+  let postHistoryText = '';
+  let defaultSlotUsed = false;
 
   for (const b of blocks) {
-    if (!b || b.enabled === false) continue;
+    if (!b) continue;
+
+    // 槽位块：不承载文本，只决定规则片段落在序列的哪一格
+    if (b.key === 'rulesDefault') {
+      seq.push(...ruleParts(buckets.charAfter));
+      defaultSlotUsed = true;
+      continue;
+    }
+    if (b.key === 'rulesDepth') continue; // 消息级注入，不占系统提示词
+
+    if (b.enabled === false) continue;
     const raw = String(b.content || '');
+
     switch (b.key) {
       case 'main':
         push('main', expandMacros(raw || preset.mainPrompt || '', character));
         break;
       case 'lorebookBefore':
-        push('lorebookBefore', [world.memory, world.constants].filter(Boolean).join('\n\n'), true);
+        push('lorebookBefore', world.constants, true);
+        break;
+      case 'longMemory':
+        push('longMemory', world.memory, true);
         break;
       case 'persona':
         push('persona', world.persona, true);
@@ -424,31 +660,53 @@ export function buildPresetPlan(character = null, history = [], userInput = '', 
         push('lorebookAfter', world.triggered, true);
         break;
       case 'postHistory':
-        push('postHistory', expandMacros(raw, character));
+        postHistoryText = expandMacros(raw, character).trim();
         break;
       case 'chatHistory':
       case 'chatExamples':
-        break; // 在下面作为独立消息处理
+        break; // 作为独立消息处理
       default:
         if (b.custom) push(b.key, expandMacros(raw, character), true);
     }
   }
 
-  // 规则书片段始终附加（受提示词预算约束），取当前角色的那一套
-  push('rules', activeRulesText(character?.id || state.activeCharacterId), true);
-  // 全局后缀始终在最后
+  // 旧预设没有槽位块时，角色后规则回落到「角色设定之后」
+  if (!defaultSlotUsed && buckets.charAfter.length) {
+    const at = charAnchorIndex(seq);
+    seq.splice(at + 1, 0, ...ruleParts(buckets.charAfter));
+  }
+  // 顶部规则：永远置顶，位置语义优先于槽位
+  if (buckets.top.length) {
+    seq.splice(mainIndex(seq), 0, ...ruleParts(buckets.top));
+  }
+
   push('suffix', settings.systemSuffix);
 
   const examplesBlock = blocks.find(b => b && b.key === 'chatExamples' && b.enabled !== false);
   const historyBlock = blocks.find(b => b && b.key === 'chatHistory' && b.enabled !== false);
-  const post = parts.find(p => p.key === 'postHistory');
+  const order = blocks.filter(b => b && b.enabled !== false && !storage.isMarkerBlock(b.key)).map(b => b.key);
 
   return {
-    systemParts: parts.filter(p => p.key !== 'postHistory'),
-    examples: examplesBlock ? parseExamples(examplesBlock.content) : [],
+    presetId: preset.id || null,
+    presetName: preset.name || '',
+    systemParts: seq,
+    examples: examplesBlock ? parseExamples(expandMacros(examplesBlock.content, character), character) : [],
     useHistory: !!historyBlock,
-    postHistory: post?.text || '',
+    postHistory: postHistoryText,
+    // depth 大的先插，保证多条规则同时落位时顺序稳定
+    depthRules: buckets.depth
+      .slice()
+      .sort((a, b) => b.depth - a.depth)
+      .map(r => ({ id: r.id, name: r.name, text: r.text, depth: r.depth })),
+    rulesInSystem: [...buckets.top, ...buckets.charAfter].map(r => r.id),
+    rulesAtDepth: buckets.depth.map(r => r.id),
+    blockOrder: order,
   };
+}
+
+/** 用当前启用的预设生成计划（旧入口，行为保持不变） */
+export function buildPresetPlan(character = null, history = [], userInput = '', settings = state.settings) {
+  return buildPresetPlanFor(activePreset(), character, history, userInput, settings);
 }
 
 // ---- 世界书（关键词触发 / 常驻条目）----
@@ -526,6 +784,7 @@ export function activeWorldParts(history = [], userInput = '', entryLimit = 0, c
     if (who) personaLines.push(`玩家扮演${who}。`);
     if (p.gender?.trim()) personaLines.push(`玩家性别：${p.gender.trim()}。`);
     if (p.personality?.trim()) personaLines.push(`玩家性格：${p.personality.trim()}。`);
+    if (p.appearance?.trim()) personaLines.push(`玩家外貌：${p.appearance.trim()}。`);
     if (p.background?.trim()) personaLines.push(`玩家背景：${p.background.trim()}。`);
     if (p.relationship?.trim()) personaLines.push(`玩家与你的关系：${p.relationship.trim()}。`);
     if (p.notes?.trim()) personaLines.push(p.notes.trim());
@@ -576,16 +835,48 @@ export function activeWorldText(history = [], userInput = '', entryLimit = 0, ch
 }
 
 // ---- 主角档案与长期记忆 ----
+// 头像只用于界面展示（本地 dataURL），外貌描述则随 Persona 注入提示词。
 export function updateProtagonist(patch) {
   const protagonist = editingScope().protagonist;
-  const allowed = ['enabled', 'name', 'title', 'gender', 'personality', 'background', 'relationship', 'notes'];
+  const allowed = ['enabled', 'name', 'title', 'gender', 'personality', 'background', 'relationship', 'notes', 'avatar', 'appearance'];
   for (const key of allowed) {
     if (key in patch) {
-      protagonist[key] = key === 'enabled' ? !!patch[key] : String(patch[key] ?? '').trim();
+      if (key === 'enabled') protagonist[key] = !!patch[key];
+      else if (key === 'avatar') protagonist[key] = String(patch[key] || '');
+      else protagonist[key] = String(patch[key] ?? '').trim();
     }
   }
   commit('protagonist');
   return protagonist;
+}
+
+/** 自定义外貌标签库：跨角色共用的词条池 */
+export function addAppearanceTag(tag) {
+  const clean = String(tag || '').trim();
+  if (!clean) return null;
+  if (!Array.isArray(state.appearanceTags)) state.appearanceTags = [];
+  if (state.appearanceTags.includes(clean)) return clean;
+  state.appearanceTags.push(clean);
+  if (state.appearanceTags.length > storage.MAX_CUSTOM_TAGS) {
+    state.appearanceTags = state.appearanceTags.slice(-storage.MAX_CUSTOM_TAGS);
+  }
+  commit('protagonist');
+  return clean;
+}
+
+export function removeAppearanceTag(tag) {
+  const clean = String(tag || '').trim();
+  state.appearanceTags = (state.appearanceTags || []).filter(t => t !== clean);
+  commit('protagonist');
+}
+
+/** 整库恢复：导入备份后整体替换运行时状态 */
+export function applyBackup(nextState) {
+  if (!nextState || typeof nextState !== 'object') return false;
+  state = nextState;
+  editScopeId = undefined;
+  commit('characters');
+  return true;
 }
 
 export function toggleProtagonist() {
@@ -608,6 +899,21 @@ export function toggleMemory() {
   memory.enabled = !memory.enabled;
   commit('memory');
   return memory;
+}
+
+/**
+ * 按角色写入长期记忆（自动归档用）。
+ * 与 updateMemory 的区别：不受页面上「设定范围」影响，永远落在当前对话角色的那一套。
+ */
+export function setScopeMemory(characterId, content) {
+  const scope = scopeOf(characterId);
+  scope.memory = {
+    ...(scope.memory || { enabled: true, content: '' }),
+    enabled: true,
+    content: String(content || '').trim(),
+  };
+  commit('memory');
+  return scope.memory;
 }
 
 // ---- Token 用量统计（只记录 API 返回的真实 usage）----

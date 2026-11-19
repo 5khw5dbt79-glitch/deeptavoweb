@@ -41,7 +41,7 @@
 
 /* 角色页 / 设置页 */
 .page-characters, .page-world, .page-settings, .page-rules { overflow-y: auto; padding: var(--sp-6) var(--sp-4) calc(96px + env(safe-area-inset-bottom)); }
-.page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); max-width: 1120px; margin: 0 auto var(--sp-6); }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); width: 100%; max-width: 1120px; margin: 0 auto var(--sp-6); }
 .page-title { font-size: var(--fs-page); font-weight: 500; letter-spacing: -.01em; }
 .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: var(--sp-1); }
 .character-grid { max-width: 1120px; margin: 0 auto; }
@@ -80,3 +80,22 @@
 .sidebar-close { display: none; }
 .sidebar-foot { padding-top: var(--sp-3); border-top: 1px solid var(--border); margin-top: var(--sp-3); }
 .drawer-mask { display: none; }
+
+/* ---- 聊天区背景：角色图片 + 暗色遮罩 ---- */
+.chat-bg {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-size: cover; background-position: center;
+  opacity: 0; transition: opacity var(--dur-slow) var(--ease);
+}
+.chat-bg.is-on { opacity: .72; filter: blur(1.5px) saturate(1.05); transform: scale(1.02); }
+/* 遮罩只压暗到「看得见轮廓、不抢文字」的程度：中间最亮，四周收边 */
+.chat-bg::after {
+  content: ""; position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(18, 18, 20, .52) 0%, rgba(18, 18, 20, .66) 55%, rgba(18, 18, 20, .86) 100%),
+    radial-gradient(120% 90% at 50% 45%, rgba(18, 18, 20, 0) 38%, rgba(18, 18, 20, .5) 100%);
+}
+.page-chat > .chat-header,
+.page-chat > .messages,
+.page-chat > .composer-wrap { position: relative; z-index: 1; }
+.page-chat > .scroll-bottom-btn { z-index: 2; }

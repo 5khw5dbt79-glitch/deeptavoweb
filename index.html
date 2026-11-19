@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#121214">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="夜谈">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23e0b872%22/></svg>">
   <title>夜谈 · 角色对话</title>
   <link rel="stylesheet" href="./css/reset.css">
@@ -47,6 +53,7 @@
 
       <!-- 聊天页 -->
       <section class="page page-chat" id="page-chat" data-page="chat">
+        <div class="chat-bg" id="chat-bg" aria-hidden="true"></div>
         <header class="chat-header">
           <button class="icon-btn menu-btn" data-action="open-drawer" aria-label="打开角色列表"></button>
           <div class="chat-header-info">
@@ -66,6 +73,11 @@
         <button class="scroll-bottom-btn" id="scroll-bottom-btn" data-action="scroll-bottom" aria-label="回到底部"></button>
 
         <div class="composer-wrap">
+          <div class="composer-tools" id="composer-tools" role="group" aria-label="快捷插入符号">
+            <button class="rp-key" type="button" data-action="insert-pair" data-pair="「」" aria-label="插入台词引号，光标停在中间" title="插入「」，光标停在中间">「台词」</button>
+            <button class="rp-key" type="button" data-action="insert-pair" data-pair="（）" aria-label="插入心理独白括号，光标停在中间" title="插入（），光标停在中间">（心理）</button>
+            <button class="rp-key" type="button" data-action="insert-pair" data-pair="……" aria-label="插入省略号" title="插入省略号">……</button>
+          </div>
           <div class="composer" id="composer">
             <textarea id="composer-input" class="composer-input" rows="1" placeholder="说点什么…" aria-label="输入消息"></textarea>
             <button class="send-btn" id="send-btn" data-action="send" aria-label="发送"></button>
@@ -110,35 +122,95 @@
 
       <!-- 规则书页 -->
       <section class="page page-rules" id="page-rules" data-page="rules">
-        <header class="page-header">
+        <header class="page-header page-header-rules">
           <div>
             <h1 class="page-title">规则书</h1>
             <p class="page-subtitle" id="rule-count">共 0 条规则</p>
           </div>
-          <button class="primary-btn" data-action="new-rule">
-            <span class="icon" data-icon="plus"></span><span>新建规则</span>
-          </button>
-        </header>
-        <div id="rules-scope"></div>
-        <div class="preset-section">
-          <div class="preset-section-head">
-            <div>
-              <h2 class="section-title">预设</h2>
-              <p class="section-desc">预设控制每次请求注入哪些提示词块和顺序，对应 APP 的「预设」页。一次启用一个。</p>
-            </div>
-            <button class="primary-btn sm-btn" data-action="new-preset">
-              <span class="icon" data-icon="plus"></span><span>新建</span>
+          <div class="page-header-actions">
+            <button class="secondary-btn sm-btn" data-action="open-preview">
+              <span class="icon" data-icon="eye"></span><span>预览 Context</span>
+            </button>
+            <button class="secondary-btn sm-btn" data-action="import-config">
+              <span class="icon" data-icon="upload"></span><span>导入配置</span>
+            </button>
+            <button class="secondary-btn sm-btn" data-action="export-config">
+              <span class="icon" data-icon="download"></span><span>导出配置</span>
+              <span class="btn-badge" id="export-badge" hidden></span>
             </button>
           </div>
-          <div class="preset-search">
-            <span class="icon" data-icon="search"></span>
-            <input class="form-input" id="preset-search" type="search" placeholder="搜索预设" aria-label="搜索预设">
-          </div>
-          <div class="preset-list" id="preset-list"></div>
+        </header>
+        <div id="rules-scope"></div>
+        <div class="rules-alerts" id="rules-alerts" aria-live="polite"></div>
+
+        <div class="wb-tabs" role="tablist" aria-label="规则书分区">
+          <button class="wb-tab is-active" role="tab" aria-selected="true" aria-controls="col-presets" data-action="wb-tab" data-tab="presets">提示词编排</button>
+          <button class="wb-tab" role="tab" aria-selected="false" aria-controls="col-rules" data-action="wb-tab" data-tab="rules">规则片段库</button>
         </div>
-        <h2 class="section-title rule-section-title">规则书片段</h2>
-        <p class="rules-intro">规则书是可复用的提示词片段。开启的规则会附加到每次对话的角色设定之后，用来统一叙事口吻、格式或写作偏好。它们只是你自己的提示词，不会改变模型服务商的内容策略。</p>
-        <div class="rule-list" id="rule-list"></div>
+
+        <div class="rules-workbench" id="rules-workbench" data-tab="presets">
+          <section class="wb-col wb-col-presets" data-col="presets" id="col-presets" aria-labelledby="wb-preset-title">
+            <div class="wb-head">
+              <div class="wb-head-text">
+                <h2 class="section-title" id="wb-preset-title">预设编排</h2>
+                <p class="section-desc" id="preset-count">一次启用一个，决定注入什么、按什么顺序</p>
+              </div>
+              <div class="wb-head-actions">
+                <button class="icon-btn xs" data-action="duplicate-preset" aria-label="复制当前预设" title="复制当前预设"><span class="icon" data-icon="copy"></span></button>
+                <button class="icon-btn xs" data-action="delete-preset" aria-label="删除当前预设" title="删除当前预设"><span class="icon" data-icon="trash"></span></button>
+                <button class="primary-btn sm-btn" data-action="new-preset"><span class="icon" data-icon="plus"></span><span>新建</span></button>
+              </div>
+            </div>
+
+            <div class="preset-switcher">
+              <select class="form-select preset-select" id="preset-select" aria-label="选择要编辑的预设"></select>
+              <button class="secondary-btn sm-btn" id="preset-activate-btn" data-action="toggle-active-preset">启用</button>
+            </div>
+            <div class="preset-io-row">
+              <button class="link-btn" data-action="import-preset"><span class="icon" data-icon="upload"></span>导入 SillyTavern 预设</button>
+              <button class="link-btn" data-action="export-preset"><span class="icon" data-icon="download"></span>导出当前预设</button>
+            </div>
+
+            <div class="preset-fields" id="preset-fields">
+              <label class="field-compact">
+                <span>名称</span>
+                <input class="form-input" id="preset-name-input" maxlength="40" placeholder="预设名称">
+              </label>
+              <label class="field-compact">
+                <span>说明</span>
+                <input class="form-input" id="preset-desc-input" maxlength="80" placeholder="一句话说明适用场景">
+              </label>
+            </div>
+
+            <div class="seq-head">
+              <h3 class="section-title sm">提示词块</h3>
+              <span class="seq-stat" id="seq-stat">—</span>
+            </div>
+            <p class="seq-legend">拖动 ⋮⋮ 调整顺序 · 点击行展开内容 · 开关控制是否注入</p>
+            <div class="block-list" id="block-list" data-dropzone="sequence"></div>
+            <div class="seq-foot">
+              <button class="secondary-btn sm-btn" data-action="open-preview">
+                <span class="icon" data-icon="eye"></span><span>预览最终 Context</span>
+              </button>
+              <span class="seq-hint" id="seq-hint"></span>
+            </div>
+          </section>
+
+          <section class="wb-col wb-col-rules" data-col="rules" id="col-rules" aria-labelledby="wb-rule-title">
+            <div class="wb-head">
+              <div class="wb-head-text">
+                <h2 class="section-title" id="wb-rule-title">规则片段库</h2>
+                <p class="section-desc" id="rule-count-inline">可复用的提示词片段</p>
+              </div>
+              <button class="primary-btn sm-btn" data-action="new-rule">
+                <span class="icon" data-icon="plus"></span><span>新建</span>
+              </button>
+            </div>
+            <p class="rules-intro">每个片段可单独设定注入位置与生效角色；拖到左侧序列的虚线槽位，即可固定落点。</p>
+            <div class="rule-list" id="rule-list"></div>
+          </section>
+        </div>
+        <input type="file" id="config-file" accept=".json,application/json" hidden>
       </section>
 
       <!-- 设置页 -->
@@ -178,8 +250,9 @@
               <input class="form-input" id="setting-model" name="model" type="text" spellcheck="false" autocomplete="off" placeholder="deepseek-chat">
             </div>
             <div class="form-group">
-              <label class="form-label" for="setting-temp">Temperature <span class="form-value" id="temp-value">1.2</span></label>
-              <input class="form-range" id="setting-temp" name="temperature" type="range" min="0" max="5" step="0.1" value="1.2">
+              <label class="form-label" for="setting-temp">Temperature <span class="form-value" id="temp-value">1.05</span></label>
+              <input class="form-range" id="setting-temp" name="temperature" type="range" min="0" max="5" step="0.05" value="1.05">
+              <p class="form-help">小说演绎建议 1.00 ~ 1.10：词汇更活，句式不易复读。</p>
             </div>
           </div>
           <div class="form-row">
@@ -192,10 +265,25 @@
               <input class="form-input" id="setting-maxtokens" name="maxTokens" type="number" min="0" max="32000" step="128" placeholder="0 = 不限制">
             </div>
           </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="setting-history-turns">最大携带历史轮数</label>
+              <input class="form-input" id="setting-history-turns" name="historyTurns" type="number" min="0" max="200" step="1" placeholder="30">
+              <p class="form-help">1 轮 = 你一句 + 角色一句。默认 30 轮；填 0 则改用下面的「消息条数」。</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="setting-context">消息条数（兜底） <span class="form-value" id="context-value">20</span></label>
+              <input class="form-range" id="setting-context" name="contextLimit" type="range" min="1" max="500" step="1" value="20">
+              <p class="form-help">历史轮数为 0 时生效。实际能带多少仍受模型上下文窗口与余额限制。</p>
+            </div>
+          </div>
           <div class="form-group">
-            <label class="form-label" for="setting-context">携带历史消息数 <span class="form-value" id="context-value">20</span></label>
-            <input class="form-range" id="setting-context" name="contextLimit" type="range" min="1" max="500" step="1" value="20">
-            <p class="form-help">每次请求附带的最近消息条数（1–500）。实际能带多少还受模型上下文窗口与余额限制。</p>
+            <label class="checkbox-row" for="setting-auto-summary">
+              <input type="checkbox" id="setting-auto-summary" name="autoSummary" checked>
+              <span>超出窗口时自动归档早期剧情</span>
+            </label>
+            <p class="form-help">把最旧的若干轮静默压缩成 200 字以内的结构化快照写入长期记忆，再从历史里剔除原文（每次约消耗一次很小的请求）。</p>
+            <p class="form-help cache-note">提示：系统提示词 + 常驻世界书 + 角色卡 + 规则 + 主角外貌的顺序固定且不含时间戳，DeepSeek 的上下文缓存更容易命中，输入计费可低至 1 折。</p>
           </div>
 
           <div class="usage-box">
@@ -232,6 +320,13 @@
               <span>流式输出（逐字显示）</span>
             </label>
             <p class="form-help">关闭后等待完整回复再显示，某些网络环境下更稳定。</p>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row" for="setting-chat-bg">
+              <input type="checkbox" id="setting-chat-bg" name="chatBackground" checked>
+              <span>用角色图片作为聊天背景</span>
+            </label>
+            <p class="form-help">仅在该角色上传了图片时生效；背景会叠一层暗色遮罩，保证正文可读。</p>
           </div>
           <details class="advanced-box">
             <summary>高级：全局提示词前缀 / 后缀</summary>
@@ -272,15 +367,20 @@
 
         <div class="settings-section">
           <h2 class="section-title">本地数据</h2>
-          <p class="section-desc">所有角色与会话保存在当前浏览器。导出备份后再清理浏览器数据。</p>
+          <p class="section-desc">所有角色、对话、规则、主角头像（Base64）与自定义标签都保存在当前浏览器。清理缓存前请先导出备份。</p>
           <div class="data-actions">
             <button class="secondary-btn" data-action="export-data">
-              <span class="icon" data-icon="download"></span><span>导出备份</span>
+              <span class="icon" data-icon="download"></span><span>导出全量备份</span>
+            </button>
+            <button class="secondary-btn" data-action="import-data">
+              <span class="icon" data-icon="upload"></span><span>导入备份</span>
             </button>
             <button class="danger-btn" data-action="clear-data">
               <span class="icon" data-icon="trash"></span><span>清空数据</span>
             </button>
           </div>
+          <p class="form-help" data-backup-note>备份为单个 JSON，包含角色、预设、规则片段、世界书、长期记忆、聊天记录、自定义标签与头像；API Key 可选择是否一并导出。</p>
+          <input type="file" id="backup-file" accept=".json,application/json" hidden>
         </div>
       </section>
 
@@ -314,6 +414,17 @@
         </div>
         <form id="character-form" class="modal-body">
           <input type="hidden" name="id" id="char-id">
+          <div class="avatar-editor">
+            <div class="avatar-preview" id="char-avatar-preview" aria-live="polite"></div>
+            <div class="avatar-editor-text">
+              <label class="secondary-btn sm-btn avatar-upload">
+                <input type="file" id="char-avatar-file" accept="image/*" hidden>
+                <span class="icon" data-icon="image"></span><span>上传角色图片</span>
+              </label>
+              <button type="button" class="link-btn avatar-remove" id="char-avatar-remove" data-action="remove-char-avatar" hidden>移除图片</button>
+              <p class="form-help" id="char-avatar-note">在本机裁剪成 240×240 WebP（≤25KB），用于角色卡片与对话气泡，不会发送给模型。</p>
+            </div>
+          </div>
           <div class="form-group">
             <label class="form-label" for="char-name">名称</label>
             <input class="form-input" id="char-name" name="name" required maxlength="40" autocomplete="off" placeholder="角色的名字">
@@ -354,11 +465,38 @@
           <input type="hidden" name="id" id="rule-id">
           <div class="form-group">
             <label class="form-label" for="rule-name">名称</label>
-            <input class="form-input" id="rule-name" name="name" required maxlength="40" autocomplete="off" placeholder="例如：叙事口吻">
+            <input class="form-input" id="rule-name" name="name" required maxlength="40" autocomplete="off" placeholder="例如：排版与克制文风">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="rule-position">注入位置</label>
+              <select class="form-select" id="rule-position" name="position">
+                <option value="after_char_desc">角色设定之后</option>
+                <option value="before_main_prompt">主提示词顶部</option>
+                <option value="chat_history_bottom">聊天历史底部（强约束）</option>
+              </select>
+            </div>
+            <div class="form-group" id="rule-depth-group" hidden>
+              <label class="form-label" for="rule-depth">插入深度 <span class="form-value" id="rule-depth-value">0</span></label>
+              <input class="form-range" id="rule-depth" name="depth" type="range" min="0" max="6" step="1" value="0">
+            </div>
+          </div>
+          <p class="form-help" id="rule-position-help">跟在角色描述之后，适合文风、排版、格式类约束。</p>
+          <div class="form-group">
+            <label class="form-label" for="rule-scope">生效范围</label>
+            <select class="form-select" id="rule-scope" name="scope">
+              <option value="global">全局生效</option>
+              <option value="character">仅指定角色</option>
+            </select>
+          </div>
+          <div class="form-group" id="rule-chars-group" hidden>
+            <label class="form-label">绑定角色</label>
+            <div class="char-picker" id="rule-char-picker"></div>
+            <p class="form-help">不选任何角色时按全局生效处理，避免规则悄悄失效。</p>
           </div>
           <div class="form-group">
             <label class="form-label" for="rule-content">规则内容</label>
-            <textarea class="form-textarea" id="rule-content" name="content" rows="9" placeholder="写下你希望模型遵守的写作或格式规则…"></textarea>
+            <textarea class="form-textarea" id="rule-content" name="content" rows="10" placeholder="写下你希望模型遵守的写作或格式规则…"></textarea>
             <p class="form-help">这段文本会作为系统提示词的一部分发送给模型。仅保存在你的浏览器。</p>
           </div>
           <div class="modal-foot">
@@ -422,6 +560,7 @@
           <button class="icon-btn" data-action="close-protagonist-modal" aria-label="关闭"></button>
         </div>
         <form id="protagonist-form" class="modal-body">
+          <input type="hidden" name="avatar" id="protagonist-avatar-data">
           <div class="form-group">
             <label class="checkbox-row" for="protagonist-enabled">
               <input type="checkbox" id="protagonist-enabled" name="enabled">
@@ -429,6 +568,19 @@
             </label>
             <p class="form-help">这里描述的是「你」在故事中的身份，不是 AI 扮演的角色。</p>
           </div>
+
+          <div class="avatar-editor">
+            <div class="avatar-preview" id="protagonist-avatar-preview" aria-live="polite"></div>
+            <div class="avatar-editor-text">
+              <label class="secondary-btn sm-btn avatar-upload">
+                <input type="file" id="protagonist-avatar-file" accept="image/*" hidden>
+                <span class="icon" data-icon="image"></span><span>选择本地照片</span>
+              </label>
+              <button type="button" class="link-btn avatar-remove" id="protagonist-avatar-remove" data-action="remove-avatar" hidden>移除头像</button>
+              <p class="form-help" id="protagonist-avatar-note">在本机裁剪压缩成 240×240 WebP（≤25KB），只用于聊天界面展示，不会发送给模型。</p>
+            </div>
+          </div>
+
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="protagonist-name">你的名字</label>
@@ -447,6 +599,23 @@
             <label class="form-label" for="protagonist-personality">性格</label>
             <textarea class="form-textarea" id="protagonist-personality" name="personality" rows="2" placeholder="例如：话不多，观察力强，遇事先退一步"></textarea>
           </div>
+
+          <div class="form-group">
+            <label class="form-label">外貌标签 <span class="form-value" id="appearance-tag-count"></span></label>
+            <div class="tag-groups" id="appearance-tag-groups"></div>
+            <div class="tag-add-row">
+              <input class="form-input" id="appearance-tag-input" maxlength="20" autocomplete="off" placeholder="自定义词条，例如 银色细框眼镜">
+              <button type="button" class="secondary-btn sm-btn" data-action="add-appearance-tag">添加</button>
+            </div>
+            <div class="tag-groups" id="appearance-custom-tags"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="protagonist-appearance">外貌补充与最终描述</label>
+            <textarea class="form-textarea" id="protagonist-appearance" name="appearance" rows="4" placeholder="点选上面的标签会自动拼成短句，也可以在这里补更细的细节，例如：左腕戴着一只旧机械表，说话时习惯性垂眼"></textarea>
+            <p class="form-help">这段文字会随「主角设定」一起注入给模型，角色会据此描写你的特征。</p>
+          </div>
+
           <div class="form-group">
             <label class="form-label" for="protagonist-background">背景经历</label>
             <textarea class="form-textarea" id="protagonist-background" name="background" rows="3" placeholder="你的来历、目前的生活状态…"></textarea>
@@ -459,7 +628,7 @@
             <label class="form-label" for="protagonist-notes">其他补充</label>
             <textarea class="form-textarea" id="protagonist-notes" name="notes" rows="2" placeholder="任何你希望角色知道的事，可留空"></textarea>
           </div>
-          <div class="modal-foot">
+          <div class="modal-foot modal-foot-sticky">
             <button class="secondary-btn" type="button" data-action="close-protagonist-modal">取消</button>
             <button class="primary-btn" type="submit">保存主角</button>
           </div>
@@ -495,34 +664,22 @@
       </div>
     </div>
 
-    <!-- 预设编辑器（APP 风格的整页覆盖层） -->
-    <div class="preset-editor" id="preset-editor" hidden>
-      <div class="preset-editor-head">
-        <button class="icon-btn" data-action="close-preset-editor" aria-label="返回"><span class="icon" data-icon="arrowLeft"></span></button>
-        <h2 class="preset-editor-title" id="preset-editor-title">新建预设</h2>
-        <button class="primary-btn sm-btn" data-action="save-preset">保存</button>
-      </div>
-      <div class="preset-editor-body">
-        <div class="form-group">
-          <label class="form-label" for="preset-edit-name">名字 <span class="required">*</span></label>
-          <input class="form-input" id="preset-edit-name" maxlength="40" placeholder="为预设命名">
+    <!-- 最终 Context 预览（Dry Run） -->
+    <div class="preview-root" id="prompt-preview" hidden>
+      <div class="preview-mask" data-action="close-preview"></div>
+      <div class="preview-panel" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+        <div class="preview-head">
+          <div class="preview-head-text">
+            <h2 class="preview-title" id="preview-title">最终 Context 预览</h2>
+            <p class="preview-sub" id="preview-sub"></p>
+          </div>
+          <button class="icon-btn" data-action="close-preview" aria-label="关闭预览"></button>
         </div>
-        <button class="base-prompt-row" data-action="toggle-base-prompt" aria-label="基础提示词">
-          <span>基础提示词</span><span class="icon" data-icon="down"></span>
-        </button>
-        <div class="base-prompt-editor" id="base-prompt-editor" hidden>
-          <textarea class="form-textarea" id="preset-edit-main" rows="9" placeholder="Main Prompt：决定整体叙事方式，支持 {{char}} / {{user}} 宏"></textarea>
-          <p class="form-help">这段内容会作为主提示词发送给模型，位置由下面的 Main Prompt 块决定。</p>
-        </div>
-        <div class="preset-block-head">
-          <h3 class="section-title sm">提示词</h3>
-          <button class="link-btn" data-action="add-custom-block"><span class="icon" data-icon="plus"></span> 添加</button>
-        </div>
-        <p class="block-legend">内容 · 标记 · 自定义 · 注入　|　↑ ↓ 调整顺序 · 眼睛图标停用它</p>
-        <div class="block-list" id="block-list"></div>
-        <div class="block-inactive">
-          <h3 class="section-title sm">未激活提示词</h3>
-          <div class="block-list" id="block-list-inactive"></div>
+        <div class="preview-summary" id="preview-summary"></div>
+        <div class="preview-warnings" id="preview-warnings" hidden></div>
+        <div class="preview-messages" id="preview-messages"></div>
+        <div class="preview-foot">
+          <span class="preview-note">按本次配置实际会发送的消息顺序排列，未发起请求、不消耗 token</span>
         </div>
       </div>
     </div>
