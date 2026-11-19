@@ -48,10 +48,17 @@ export const BUILTIN_RULES = [
     id: 'rule_builtin_format',
     name: '排版与克制文风',
     content: `[排版与叙事规范]
+- 动作与环境描写：使用常规叙述文本，每 2~3 句自然分段；这是回复的主体。
+- 角色台词：必须使用中文直角引号「」包裹。
+- 内心独白：必须使用圆括号（）包裹，且不要单独成段，要挂在动作或台词上。
+- 描写原则：通过具体的肢体微动作、眼神变化和环境细节传递情绪，禁止直接堆砌“温柔、愤怒、悲伤、心动”等抽象情绪词。
+- 硬性要求：每轮回复至少一处动作或环境细节；严禁整段只有台词与心理，也不允许连续两段纯对白。`,
+    legacy: `[排版与叙事规范]
 - 动作与环境描写：使用常规叙述文本，每 2~3 句自然分段。
 - 角色台词：必须使用中文直角引号「」包裹。
 - 内心独白：必须使用圆括号（）包裹。
 - 描写原则：通过具体的肢体微动作、眼神变化和环境细节传递情绪，禁止直接堆砌“温柔、愤怒、悲伤、心动”等抽象情绪词。`,
+    rev: 2,
     position: 'after_char_desc',
     depth: 0,
     scope: 'global',
@@ -71,6 +78,7 @@ export const BUILTIN_RULES = [
     scope: 'global',
     boundCharacterIds: [],
     builtin: true,
+    rev: 2,
     enabled: false,
   },
   {
@@ -86,6 +94,7 @@ export const BUILTIN_RULES = [
     scope: 'global',
     boundCharacterIds: [],
     builtin: true,
+    rev: 2,
     enabled: false,
   },
   {
@@ -94,12 +103,35 @@ export const BUILTIN_RULES = [
     content: `[节奏与停止线]
 1. 单次回复总字数严格控制在 200~350 字之间，层层递进情绪，绝不一步到位。
 2. 必须在张力达到顶峰、或 {{char}} 做出试探性动作、抛出双关语的瞬间停住，把下一步的选择权留给 {{user}}。
+3. 严禁越界续写 {{user}} 的任何反应或台词。
+4. 这 200~350 字里，至少三分之一用于动作与环境描写；如果只剩台词和心理，说明写少了，要补画面。`,
+    legacy: `[节奏与停止线]
+1. 单次回复总字数严格控制在 200~350 字之间，层层递进情绪，绝不一步到位。
+2. 必须在张力达到顶峰、或 {{char}} 做出试探性动作、抛出双关语的瞬间停住，把下一步的选择权留给 {{user}}。
 3. 严禁越界续写 {{user}} 的任何反应或台词。`,
+    rev: 2,
     position: 'chat_history_bottom',
     depth: 0,
     scope: 'global',
     boundCharacterIds: [],
     builtin: true,
+    rev: 2,
+    enabled: false,
+  },
+  {
+    id: 'rule_builtin_stage',
+    name: '场景与动作锚点',
+    content: `[场景与动作锚点]
+1. 先落镜再开口：每次回复先用一句动作或环境把镜头定住（他放下杯子、雨声忽然变大、走廊灯闪了一下），再进入台词。
+2. 动作要有指向：动作不是装饰，必须透露情绪或意图——攥紧又松开的手、避开的视线、向前半步的距离。
+3. 环境参与叙事：让光线、温度、声音随对话推进而变化，用环境替代“气氛暧昧”“空气凝固”这类概括。
+4. 自检：如果把所有台词与心理删掉，剩下的画面不足两句，说明动作写少了，必须补写再输出。`,
+    position: 'after_char_desc',
+    depth: 0,
+    scope: 'global',
+    boundCharacterIds: [],
+    builtin: true,
+    rev: 2,
     enabled: false,
   },
 ];
@@ -134,7 +166,8 @@ export const DEFAULT_MAIN_PROMPT = `你现在完全扮演角色 {{char}}，与 {
 核心铁律：
 1. 绝对沉浸：以贴身第三人称或第一人称视角展开叙述，完全代入 {{char}} 的感官与认知，严禁跳出角色进行任何旁白、总结、说教或系统提示。
 2. 信息隔离：{{char}} 只能知晓自身感官触及与过往记忆中的信息，严禁提前预知 {{user}} 的心理活动。
-3. 严禁代写：只描写 {{char}} 自身的语言、动作、神态与心理。绝对禁止替 {{user}} 说话、代写 {{user}} 的动作、心跳或替 {{user}} 做决定。`;
+3. 严禁代写：只描写 {{char}} 自身的语言、动作、神态与心理。绝对禁止替 {{user}} 说话、代写 {{user}} 的动作、心跳或替 {{user}} 做决定。
+4. 场景与动作：每轮回复必须写出至少一处可被看见的动作或环境细节（门缝的光、衣料摩擦、指节收紧、雨声变大），让文字有画面；严禁整段只有台词与心理。动作与环境应是叙事主体，台词与心理是点缀。`;
 
 const NOVEL_MAIN_PROMPT = `你是一名擅长写沉浸式小说的叙述者，正在与 {{user}} 合写一个以 {{char}} 为主角的故事。
 - 始终用第三人称限制视角描写 {{char}} 的所见、所感与所作，不写 {{user}} 的内心。
@@ -205,7 +238,7 @@ export const BUILTIN_PRESETS = [
     description: '推荐默认。角色、世界书、主角、记忆与规则片段全量注入，长线叙事用。',
     mainPrompt: DEFAULT_MAIN_PROMPT,
     blocks: makePresetBlocks(DEFAULT_MAIN_PROMPT),
-    postHistory: '保持角色一致：始终以 {{char}} 的身份说话，不要跳出角色解释设定或总结剧情。',
+    postHistory: '保持角色一致：每轮至少写一处动作或环境细节，再用台词与心理补足；不要跳出角色解释设定或总结剧情。',
     builtin: true,
     isDefault: true,
   },
@@ -215,7 +248,7 @@ export const BUILTIN_PRESETS = [
     description: '小说式第三人称描写，节奏放慢，强调感官细节与心理潜台词。',
     mainPrompt: NOVEL_MAIN_PROMPT,
     blocks: makePresetBlocks(NOVEL_MAIN_PROMPT, NOVEL_BLOCK_KEYS),
-    postHistory: '按「排版与叙事规范」输出：常规文本写动作与环境，台词用「」，内心独白用（）。',
+    postHistory: '按「排版与叙事规范」输出：常规文本写动作与环境（占主要篇幅），台词用「」，内心独白用（）。',
     builtin: true,
     isDefault: false,
   },
@@ -461,7 +494,13 @@ export function defaultState() {
       chatBackground: true,
     },
     rules,
-    presets: BUILTIN_PRESETS.map(p => ({ ...p, blocks: p.blocks.map(b => ({ ...b })) })),
+    presets: BUILTIN_PRESETS.map((p) => {
+      const blocks = p.blocks.map(b => ({ ...b }));
+      // 新装无需再走一次 reload：把预设级 postHistory 直接落到块里
+      const post = blocks.find(b => b.key === 'postHistory');
+      if (post && !post.content && p.postHistory) post.content = p.postHistory;
+      return { ...p, blocks };
+    }),
     activePresetId: 'preset_default',
     worldBooks: BUILTIN_WORLD_ENTRIES.map(w => ({ ...w })),
     protagonist: defaultProtagonist(),
@@ -517,6 +556,79 @@ function normalizeTagList(raw) {
  * 把任意来源（localStorage / 导入的备份文件）的数据补齐成可运行的 state。
  * 导入复用同一套规整逻辑，避免旧版本备份把字段缺失带进来。
  */
+
+/**
+ * 内置规则 / 默认预设的版本升级。
+ * 只替换「仍然等于旧默认文案」的条目：用户改过的内容一律不动；
+ * 如果确认用户完全没改过默认，再补上新增的「场景与动作锚点」规则。
+ */
+const LEGACY_MAIN_PROMPTS = {
+  preset_default: `你现在完全扮演角色 {{char}}，与 {{user}} 所扮演的角色在当前世界观下进行沉浸式互动小说创作。
+
+核心铁律：
+1. 绝对沉浸：以贴身第三人称或第一人称视角展开叙述，完全代入 {{char}} 的感官与认知，严禁跳出角色进行任何旁白、总结、说教或系统提示。
+2. 信息隔离：{{char}} 只能知晓自身感官触及与过往记忆中的信息，严禁提前预知 {{user}} 的心理活动。
+3. 严禁代写：只描写 {{char}} 自身的语言、动作、神态与心理。绝对禁止替 {{user}} 说话、代写 {{user}} 的动作、心跳或替 {{user}} 做决定。`,
+};
+
+const LEGACY_POST_HISTORY = {
+  preset_default: '保持角色一致：始终以 {{char}} 的身份说话，不要跳出角色解释设定或总结剧情。',
+  preset_novel: '按「排版与叙事规范」输出：常规文本写动作与环境，台词用「」，内心独白用（）。',
+};
+
+function upgradeBuiltins(state) {
+  const rules = state.rules || [];
+  const changed = BUILTIN_RULES.filter(d => d.legacy);
+  const untouched = changed.length > 0 && changed.every((def) => {
+    const rule = rules.find(r => r.id === def.id);
+    return !!rule && rule.content.trim() === def.legacy.trim();
+  });
+
+  for (const def of BUILTIN_RULES) {
+    const rule = rules.find(r => r.id === def.id);
+    if (!rule) continue;
+    const rev = Number(rule.rev) || 1;
+    if (rev >= def.rev) { rule.rev = def.rev; continue; }
+    if (def.legacy && rule.content.trim() === def.legacy.trim()) rule.content = def.content;
+    rule.rev = def.rev;
+  }
+
+  if (untouched && !rules.some(r => r.id === 'rule_builtin_stage')) {
+    const stage = BUILTIN_RULES.find(d => d.id === 'rule_builtin_stage');
+    if (stage) {
+      rules.push({
+        id: stage.id,
+        name: stage.name,
+        content: stage.content,
+        position: stage.position,
+        depth: stage.depth,
+        scope: stage.scope,
+        boundCharacterIds: [...stage.boundCharacterIds],
+        builtin: true,
+        rev: stage.rev,
+        enabled: true,
+      });
+    }
+  }
+
+  for (const preset of state.presets || []) {
+    const def = BUILTIN_PRESETS.find(bp => bp.id === preset.id);
+    if (!def) continue;
+    const main = preset.blocks?.find(b => b.key === 'main');
+    const legacyMain = LEGACY_MAIN_PROMPTS[preset.id];
+    if (main && legacyMain && main.content.trim() === legacyMain.trim()) {
+      main.content = def.mainPrompt || DEFAULT_MAIN_PROMPT;
+      preset.mainPrompt = main.content;
+    }
+    const post = preset.blocks?.find(b => b.key === 'postHistory');
+    const legacyPost = LEGACY_POST_HISTORY[preset.id];
+    if (post && legacyPost && post.content.trim() === legacyPost.trim()) {
+      post.content = def.postHistory || '';
+      preset.postHistory = post.content;
+    }
+  }
+}
+
 export function normalizeState(data, base = defaultState()) {
   if (!data || typeof data !== 'object') return base;
   const state = {
@@ -582,6 +694,8 @@ export function normalizeState(data, base = defaultState()) {
   // 主角档案字段补全
   state.protagonist = { ...base.protagonist, ...(state.protagonist || {}) };
   state.memory = { ...base.memory, ...(state.memory || {}) };
+  // 老版本存档：升级内置规则与默认预设文案（不覆盖用户改过的内容）
+  upgradeBuiltins(state);
   return state;
 }
 

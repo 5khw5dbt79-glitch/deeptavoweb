@@ -613,6 +613,7 @@
 /* ---- 正文高亮：台词 / 心理 ---- */
 .rp-quote { color: var(--accent-text); }
 .rp-inner { color: #a9b4d8; }
+.rp-action { color: #9dbfae; }
 
 /* ---- 回复工具条：重新生成 / 版本切换 ---- */
 .message-tools {

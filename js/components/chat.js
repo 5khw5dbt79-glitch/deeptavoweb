@@ -21,7 +21,9 @@ function escapeHTML(str = '') {
 function formatRich(text = '') {
   return escapeHTML(text)
     .replace(/「([^」\n]*)」/g, '<span class="rp-quote">「$1」</span>')
-    .replace(/（([^）\n]*)）/g, '<span class="rp-inner">（$1）</span>');
+    .replace(/（([^）\n]*)）/g, '<span class="rp-inner">（$1）</span>')
+    // *动作* 视为动作描写：去掉星号、单独着色；要求含中文，避免把 2*3*4 当成动作
+    .replace(/\*([^*\n]*[\u4e00-\u9fff][^*\n]*)\*/g, '<span class="rp-action">$1</span>');
 }
 
 function fmtTime(ts) {
@@ -393,6 +395,7 @@ function insertPair(pair) {
   let caret = start;
   if (pair === '「」') { insert = `「${selected}」`; caret = start + 1 + selected.length; }
   else if (pair === '（）') { insert = `（${selected}）`; caret = start + 1 + selected.length; }
+  else if (pair === '*') { insert = `*${selected}*`; caret = start + 1 + selected.length; }
   else { insert = '……'; caret = start + insert.length; }
   ta.value = ta.value.slice(0, start) + insert + ta.value.slice(end);
   ta.focus();
