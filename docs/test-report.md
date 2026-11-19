@@ -203,3 +203,19 @@
 `e2e-rp.mjs` 扩到 **46 项**，新增 5 条：聊天背景启用（`#chat-bg.is-on` + dataURL）、遮罩存在、设置开关即时关闭、`detectHeicSupport()` 返回布尔、角色无图时背景清空。全量 **284 条 e2e + 30 条 UI 冒烟**通过。
 
 同时修掉一个真实问题：切换「聊天背景」开关只写了设置、页面不重绘，背景要等下次渲染才变——现在 `settings` 变更会在聊天页调用 `refreshChatBackground()` 即时生效。
+
+### 追加：移动端布局与输入框修复（2026-11-20，iPhone 15 Pro Max 430×932）
+
+用户实机截图暴露了 4 类问题，已全部修复并新增 `e2e-mobile.mjs`（20 项）：
+
+1. **按钮文字竖排 / 断字**：`预览 Context` 拆成两行、`导入配/置`、`新/建` 竖排。原因是 flex 子项默认可收缩，文字被挤到换行。修复：按钮统一 `flex: 0 0 auto; white-space: nowrap`，容器只整排换行。
+2. **Tab 栏被压成 8px**：给 `.wb-tabs` 加 `overflow: hidden` 后，flex 子项的自动最小尺寸变成 0，被长内容挤扁。修复：`flex: 0 0 auto; min-height: 40px`，并对所有滚动页（characters / world / settings / rules）设 `> * { flex-shrink: 0 }`。
+3. **输入框在键盘弹起时错位/被压扁**：旧实现 `height: calc(100dvh - var(--kb-inset))`，iOS 的 `dvh` 本身会随键盘变化，等于二次扣减；且用 `innerHeight` 判键盘在 iOS 上常为 0，底栏不收起。修复：以 `visualViewport.height` 作为 `--app-height` 唯一来源；键盘判定改为「可见高度比基线少 80px」；聚焦时 `window.scrollTo(0,0)` 复位 visual viewport 上推；`autoGrow` 兜最小 24px，避免清空后高度 0。
+4. **输入框双线焦点环**：全局 `:focus-visible` 与 `.composer` 边框叠加，iOS 上看着像双线 bug。修复：输入类控件 `outline: none`，改由 `.composer:focus-within` 变色提示。
+
+顺带修掉两个真实缺陷：
+
+- **导入配置不落盘**：`handleImport` 直接 `scope.rules.push(...)`，没有 `commit()`，刷新后导入的规则全丢。改为 `state.importRules()`（内部 `markConfigEdited + commit`）。测试覆盖「导入 → reload → 仍在」。
+- **推荐规则包提示与计数**：原来只在「一条都没启用」时出现，且补回被删条目后仍提示「已全部启用」。现在按「还缺几条」判断，按钮文案 `一键补齐`，toast 区分「补回 N 条」与「启用 N 条」。
+
+全量：**304 条 e2e + 30 条 UI 冒烟 + 8 条注入断言**通过。
