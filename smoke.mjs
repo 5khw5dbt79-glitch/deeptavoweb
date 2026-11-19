@@ -42,10 +42,10 @@ check('开箱有默认预设启用', (await page.locator('#preset-count').textCo
 check('块列表渲染', await page.locator('#block-list .block-row').count() >= 8);
 check('两个规则槽位', await page.locator('#block-list .block-slot').count() === 2);
 check('槽位显示流入规则数', (await page.locator('#block-list .block-slot').first().textContent())?.includes('条规则流入'));
-check('规则库有 4 条内置规则', await page.locator('.rule-card').count() === 4);
-check('规则生效标记', await page.locator('.rule-card.rule-on').count() === 4);
+check('规则库有 5 条内置规则', await page.locator('.rule-card').count() === 5);
+check('规则生效标记', await page.locator('.rule-card.rule-on').count() === 5);
 check('规则卡显示注入位置', (await page.locator('.rule-card').first().textContent())?.includes('角色设定后'));
-check('页面顶部计数', (await page.locator('#rule-count').textContent())?.includes('已启用 4'));
+check('页面顶部计数', (await page.locator('#rule-count').textContent())?.includes('已启用 5'));
 
 // 展开块编辑
 await page.locator('#block-list [data-action="block-edit"]').first().click();
@@ -86,7 +86,7 @@ await page.waitForTimeout(100);
 check('选历史底部时出现深度滑块', await page.locator('#rule-depth-group:not([hidden])').count() === 1);
 await page.locator('#rule-form button[type="submit"]').click();
 await page.waitForTimeout(300);
-check('新建规则成功', await page.locator('.rule-card').count() === 5);
+check('新建规则成功', await page.locator('.rule-card').count() === 6);
 check('新规则显示 Depth 标记', (await page.locator('#rule-list').textContent())?.includes('D0'));
 
 // 作用域绑定
