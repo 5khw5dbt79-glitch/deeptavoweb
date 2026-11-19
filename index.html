@@ -64,6 +64,7 @@
           </div>
           <div class="chat-header-actions">
             <span class="status" id="connection-status"><span class="status-dot"></span><span class="status-text">未配置</span></span>
+            <button class="icon-btn" data-action="open-sessions" aria-label="对话记录" title="对话记录"><span class="icon" data-icon="history"></span></button>
             <button class="icon-btn" data-route="#/settings" aria-label="设置"></button>
           </div>
         </header>
@@ -698,6 +699,24 @@
             <button class="secondary-btn" data-action="close-confirm">取消</button>
             <button class="danger-btn" id="confirm-ok" data-action="confirm-ok">删除</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 对话记录 / 新对话 -->
+    <div class="modal-root" id="sessions-modal" hidden>
+      <div class="modal-mask" data-action="close-sessions"></div>
+      <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="sessions-title">
+        <div class="modal-head">
+          <h2 class="modal-title" id="sessions-title">对话记录</h2>
+          <button class="icon-btn" data-action="close-sessions" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+          <button class="primary-btn sessions-new" data-action="new-chat">
+            <span class="icon" data-icon="plus"></span><span>开始新对话</span>
+          </button>
+          <p class="form-help">沿用当前角色卡与全部设定重新开始；现在这段对话会归档，随时可以恢复。</p>
+          <div class="session-list" id="session-list"></div>
         </div>
       </div>
     </div>

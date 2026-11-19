@@ -95,6 +95,11 @@ document.addEventListener('click', (e) => {
     case 'variant-prev': chat.handleChatAction('variant-prev', id); break;
     case 'variant-next': chat.handleChatAction('variant-next', id); break;
     case 'insert-pair': chat.handleChatAction('insert-pair', null, el); break;
+    case 'open-sessions': chat.handleChatAction('open-sessions'); break;
+    case 'close-sessions': chat.handleChatAction('close-sessions'); break;
+    case 'new-chat': chat.handleChatAction('new-chat'); break;
+    case 'restore-session': chat.handleChatAction('restore-session', id); break;
+    case 'delete-session': chat.handleChatAction('delete-session', id); break;
     case 'goto-characters': router.navigate('characters'); break;
     case 'open-drawer': openDrawer(); break;
     case 'close-drawer': closeDrawer(); break;
@@ -130,7 +135,8 @@ document.addEventListener('click', (e) => {
 // ESC 关闭浮层
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('#character-modal').hidden) characters.closeCharacterModal();
+  if (!$('#sessions-modal').hidden) chat.closeSessions();
+  else if (!$('#character-modal').hidden) characters.closeCharacterModal();
   else if (!$('#world-modal').hidden) world.closeWorldModal();
   else if (!$('#protagonist-modal').hidden) world.closeProtagonistModal();
   else if (!$('#memory-modal').hidden) world.closeMemoryModal();
@@ -141,7 +147,7 @@ document.addEventListener('keydown', (e) => {
 
 // ---- 启动 ----
 paintIcons();
-chat.initChat();
+chat.initChat(openConfirm);
 characters.initCharacters(openConfirm);
 rules.initRules(openConfirm);
 world.initWorld(openConfirm);

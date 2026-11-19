@@ -253,6 +253,88 @@ export function setMessageVariant(characterId, messageId, index) {
 }
 
 /** 取某条消息之前的历史快照（Reroll 用：不包含这条回复本身） */
+// ---- 对话记录：新对话时归档当前对话，可恢复 ----
+const MAX_SESSIONS = 10;
+
+function archiveList(characterId) {
+  const char = state.characters.find(c => c.id === characterId);
+  if (!char) return null;
+  if (!Array.isArray(char.sessions)) char.sessions = [];
+  return char.sessions;
+}
+
+function sessionTitle(messages) {
+  const first = messages.find(m => m.role === 'user' && String(m.content || '').trim())
+    || messages.find(m => String(m.content || '').trim());
+  const text = String(first?.content || '空对话').replace(/\s+/g, ' ').trim();
+  return text.length > 26 ? `${text.slice(0, 26)}…` : text;
+}
+
+function pushArchive(characterId, messages) {
+  const list = archiveList(characterId);
+  if (!list || !messages.length) return;
+  list.unshift({
+    id: uid('session'),
+    title: sessionTitle(messages),
+    createdAt: Date.now(),
+    messages: messages.map(m => ({ ...m })),
+  });
+  if (list.length > MAX_SESSIONS) list.length = MAX_SESSIONS;
+}
+
+/** 开始新对话：当前对话归档，重新写入开场白（角色卡与设定不变） */
+export function startNewChat(characterId = state.activeCharacterId) {
+  const char = state.characters.find(c => c.id === characterId);
+  if (!char) return null;
+  const current = state.conversations[characterId] || [];
+  pushArchive(characterId, current);
+  const now = Date.now();
+  state.conversations[characterId] = char.greeting
+    ? [{ id: uid('msg'), role: 'assistant', content: char.greeting, status: 'done', createdAt: now }]
+    : [];
+  commit('messages');
+  return { archived: current.length };
+}
+
+/** 归档列表（只给界面用的摘要，不带 messages） */
+export function archivedSessions(characterId = state.activeCharacterId) {
+  const char = state.characters.find(c => c.id === characterId);
+  return (char?.sessions || []).map(s => ({
+    id: s.id,
+    title: s.title,
+    createdAt: s.createdAt,
+    count: s.messages?.length || 0,
+  }));
+}
+
+/** 恢复某段归档：当前对话先归档，再把选中的换回当前 */
+export function restoreSession(sessionId, characterId = state.activeCharacterId) {
+  const list = archiveList(characterId);
+  if (!list) return null;
+  const idx = list.findIndex(s => s.id === sessionId);
+  if (idx < 0) return null;
+  const target = list[idx];
+  const current = state.conversations[characterId] || [];
+  if (current.length) {
+    list.push({ id: uid('session'), title: sessionTitle(current), createdAt: Date.now(), messages: current.map(m => ({ ...m })) });
+  }
+  list.splice(idx, 1);
+  if (list.length > MAX_SESSIONS) list.length = MAX_SESSIONS;
+  state.conversations[characterId] = (target.messages || []).map(m => ({ ...m }));
+  commit('messages');
+  return state.conversations[characterId];
+}
+
+export function deleteSession(sessionId, characterId = state.activeCharacterId) {
+  const list = archiveList(characterId);
+  if (!list) return false;
+  const next = list.filter(s => s.id !== sessionId);
+  if (next.length === list.length) return false;
+  state.characters.find(c => c.id === characterId).sessions = next;
+  commit('characters');
+  return true;
+}
+
 export function historyBefore(characterId, messageId) {
   const msgs = state.conversations[characterId] || [];
   const idx = msgs.findIndex(m => m.id === messageId);

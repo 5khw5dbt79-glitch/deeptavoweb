@@ -6,6 +6,7 @@ import { isUsableAvatar } from '../avatar.js';
 import { navigate } from '../router.js';
 
 let abortController = null;
+let confirmFn = null;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -14,16 +15,44 @@ function escapeHTML(str = '') {
 }
 
 /**
- * 角色扮演排版高亮：台词「」与内心独白（）用不同颜色区分。
- * 先转义再上色，避免文本里的尖括号被当作标签。
- * 未闭合的括号在流式输出期间保持原样，闭合后才着色。
+ * 角色扮演排版高亮：
+ * - 「台词」暖琥珀
+ * - （心理）冷蓝
+ * - 其余叙述（动作 / 环境 / 场景）统一灰绿，*星号*包裹的动作也归到这一类
+ * 先按三类切分再逐段转义，避免 HTML 标签被二次处理。
  */
-function formatRich(text = '') {
-  return escapeHTML(text)
-    .replace(/「([^」\n]*)」/g, '<span class="rp-quote">「$1」</span>')
-    .replace(/（([^）\n]*)）/g, '<span class="rp-inner">（$1）</span>')
-    // *动作* 视为动作描写：去掉星号、单独着色；要求含中文，避免把 2*3*4 当成动作
-    .replace(/\*([^*\n]*[\u4e00-\u9fff][^*\n]*)\*/g, '<span class="rp-action">$1</span>');
+const RP_TOKEN = /「[^」\n]*」|（[^）\n]*）|\*[^*\n]*[\u4e00-\u9fff][^*\n]*\*/g;
+
+/**
+ * @param {string} text
+ * @param {boolean} narrator 角色回复：未加括号的叙述即动作/环境，统一着绿；
+ *                           玩家输入：普通文字保持默认色，只有 *星号* 标记的动作着绿
+ */
+function formatRich(text = '', narrator = true) {
+  const raw = String(text || '');
+  if (!raw) return '';
+  const out = [];
+  let last = 0;
+  const pushPlain = (slice) => {
+    if (!slice) return;
+    out.push(narrator ? `<span class="rp-action">${escapeHTML(slice)}</span>` : escapeHTML(slice));
+  };
+  for (const m of raw.matchAll(RP_TOKEN)) {
+    pushPlain(raw.slice(last, m.index));
+    const seg = m[0];
+    if (seg.startsWith('「')) out.push(`<span class="rp-quote">${escapeHTML(seg)}</span>`);
+    else if (seg.startsWith('（')) out.push(`<span class="rp-inner">${escapeHTML(seg)}</span>`);
+    else out.push(`<span class="rp-action">${escapeHTML(seg.slice(1, -1))}</span>`);
+    last = m.index + seg.length;
+  }
+  pushPlain(raw.slice(last));
+  return out.join('');
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} `
+    + `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function fmtTime(ts) {
@@ -89,7 +118,7 @@ function renderMessage(msg, char) {
       ${avatar}
       <div class="message-body">
         <div class="message-meta"><span class="message-author">${escapeHTML(author)}</span><span class="message-time">${fmtTime(msg.createdAt)}</span></div>
-        <div class="${textCls}">${formatRich(msg.content)}</div>
+        <div class="${textCls}">${formatRich(msg.content, !isUser)}</div>
         ${statusLine}
         ${variantTools(msg)}
       </div>
@@ -302,6 +331,79 @@ export async function sendMessage() {
   }
 }
 
+// ---- 对话记录：新对话（归档当前）/ 恢复 / 删除 ----
+function renderSessionList() {
+  const host = $('#session-list');
+  if (!host) return;
+  const list = state.archivedSessions();
+  if (!list.length) {
+    host.innerHTML = '<p class="form-help session-empty">还没有归档对话。点上面的「开始新对话」，当前这段会自动存到这里。</p>';
+    return;
+  }
+  host.innerHTML = list.map(s => `
+    <article class="session-row">
+      <div class="session-info">
+        <div class="session-title">${escapeHTML(s.title)}</div>
+        <div class="session-meta">${fmtDate(s.createdAt)} · ${s.count} 条消息</div>
+      </div>
+      <div class="session-actions">
+        <button class="secondary-btn sm-btn" data-action="restore-session" data-id="${s.id}">恢复</button>
+        <button class="icon-btn xs" data-action="delete-session" data-id="${s.id}" aria-label="删除这段对话" title="删除"><span class="icon">${ICONS.trash}</span></button>
+      </div>
+    </article>`).join('');
+}
+
+export function openSessions() {
+  if (!state.activeCharacter()) {
+    toast('还没有角色');
+    return;
+  }
+  renderSessionList();
+  $('#sessions-modal').hidden = false;
+}
+
+export function closeSessions() {
+  const el = $('#sessions-modal');
+  if (el) el.hidden = true;
+}
+
+function startNewChat() {
+  const char = state.activeCharacter();
+  if (!char) return;
+  const count = state.activeMessages().length;
+  confirmFn?.(
+    '开始新对话',
+    count
+      ? `当前 ${count} 条消息会归档（最多保留 10 段），角色卡与全部设定不受影响。`
+      : '当前对话还没有内容，直接重新开始？',
+    () => {
+      state.startNewChat(char.id);
+      closeSessions();
+      renderChat();
+      toast('已开始新对话');
+    },
+    '开始新对话',
+  );
+}
+
+function restoreSession(id) {
+  const char = state.activeCharacter();
+  if (!char) return;
+  if (!state.restoreSession(id, char.id)) return;
+  closeSessions();
+  renderChat();
+  toast('已恢复这段对话');
+}
+
+function removeSession(id) {
+  const char = state.activeCharacter();
+  if (!char) return;
+  confirmFn?.('删除这段对话', '删除后无法恢复，当前正在进行的对话不受影响。', () => {
+    state.deleteSession(id, char.id);
+    renderSessionList();
+  }, '删除');
+}
+
 /** 重新生成：用这条回复之前的上下文再要一版，旧版本保留在 variants 里 */
 async function rerollMessage(messageId) {
   if (abortController) return;
@@ -480,7 +582,8 @@ function bindVisualViewport() {
   syncViewport();
 }
 
-export function initChat() {
+export function initChat(confirm) {
+  confirmFn = confirm;
   const input = $('#composer-input');
   input.addEventListener('input', autoGrow);
   input.addEventListener('keydown', (e) => {
@@ -514,5 +617,15 @@ export function handleChatAction(action, id, el) {
     switchVariant(id, 1);
   } else if (action === 'insert-pair') {
     insertPair(el?.dataset.pair || '「」');
+  } else if (action === 'open-sessions') {
+    openSessions();
+  } else if (action === 'close-sessions') {
+    closeSessions();
+  } else if (action === 'new-chat') {
+    startNewChat();
+  } else if (action === 'restore-session') {
+    restoreSession(id);
+  } else if (action === 'delete-session') {
+    removeSession(id);
   }
 }

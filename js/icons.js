@@ -34,6 +34,7 @@ export const ICONS = {
   left: wrap('<path d="m15 18-6-6 6-6"/>'),
   right: wrap('<path d="m9 18 6-6-6-6"/>'),
   image: wrap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>'),
+  history: wrap('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/>'),
 };
 
 export function paintIcons(root = document) {

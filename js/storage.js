@@ -452,6 +452,16 @@ function normalizeCharacter(raw) {
     color: String(raw.color || '#E0B872'),
     // 角色图片：与主角头像一样，本地压缩后只用于界面展示，不进 API
     avatar: String(raw.avatar || ''),
+    // 归档的历史对话（「开始新对话」时把当前对话推进来）
+    sessions: (Array.isArray(raw.sessions) ? raw.sessions : [])
+      .filter(x => x && typeof x === 'object')
+      .map(x => ({
+        id: x.id || `session_${Math.random().toString(36).slice(2, 9)}`,
+        title: String(x.title || '历史对话'),
+        createdAt: Number(x.createdAt) || Date.now(),
+        messages: (Array.isArray(x.messages) ? x.messages : []).map(normalizeMessage).filter(Boolean),
+      }))
+      .slice(0, 10),
     createdAt: Number(raw.createdAt) || Date.now(),
     updatedAt: Number(raw.updatedAt) || Number(raw.createdAt) || Date.now(),
   };
